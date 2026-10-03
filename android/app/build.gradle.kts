@@ -22,8 +22,8 @@ android {
         applicationId = "app.car.parking"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.3.1"
+        versionCode = 5
+        versionName = "0.3.2"
 
         // 휴대폰(arm64)과 PC 에뮬레이터(x86_64)만 포함해 APK 크기를 줄인다
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
