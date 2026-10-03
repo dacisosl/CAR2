@@ -3,6 +3,7 @@ package app.car.parking.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import app.car.parking.BuildConfig
 import app.car.parking.CarApp
 import app.car.parking.data.location.Fix
 import app.car.parking.data.storage.AppSettings
@@ -12,6 +13,7 @@ import app.car.parking.data.storage.CandidateStatus
 import app.car.parking.data.storage.DrawerSide
 import app.car.parking.data.storage.ParkingRecordEntity
 import app.car.parking.domain.floor.FloorRecommendation
+import app.car.parking.domain.floor.Floors
 import app.car.parking.domain.parking.DrawerTarget
 import app.car.parking.domain.parking.ParkingRepository
 import app.car.parking.platform.autolaunch.AutoLauncher
@@ -129,21 +131,29 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     init {
         val prefs = app.getSharedPreferences("update", android.content.Context.MODE_PRIVATE)
         val last = prefs.getLong("lastCheck", 0L)
-        if (System.currentTimeMillis() - last > AUTO_CHECK_INTERVAL_MS) {
-            viewModelScope.launch {
-                checkForUpdate(manual = false)
+        // Play 배포판은 Play가 업데이트를 맡으므로 확인하지 않는다
+        if (BuildConfig.SELF_UPDATE && System.currentTimeMillis() - last > AUTO_CHECK_INTERVAL_MS) {
+            checkForUpdate(manual = false) {
+                // 네트워크 실패는 다음 실행 때 다시 확인하도록 성공한 경우만 기록한다
                 prefs.edit().putLong("lastCheck", System.currentTimeMillis()).apply()
             }
         }
     }
 
-    fun checkForUpdate(manual: Boolean = true) {
+    fun checkForUpdate(manual: Boolean = true, onChecked: () -> Unit = {}) {
+        if (!BuildConfig.SELF_UPDATE) return
         if (_update.value is UpdateState.Checking || _update.value is UpdateState.Downloading) return
         _update.value = UpdateState.Checking
         viewModelScope.launch {
             _update.value = runCatching { container.updater.checkLatest() }.fold(
-                onSuccess = { info -> if (info != null) UpdateState.Available(info) else UpdateState.UpToDate },
-                onFailure = { UpdateState.Failed("업데이트를 확인하지 못했어요. 인터넷 연결을 확인하세요") },
+                onSuccess = { info ->
+                    onChecked()
+                    if (info != null) UpdateState.Available(info) else UpdateState.UpToDate
+                },
+                onFailure = {
+                    android.util.Log.w("AppUpdater", "update check failed", it)
+                    UpdateState.Failed("업데이트를 확인하지 못했어요. 인터넷 연결을 확인하세요")
+                },
             )
             val result = _update.value
             if (!manual) {
@@ -176,17 +186,23 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** 설치 허용 화면에서 돌아오면 이어서 설치 화면을 연다 */
+    private var awaitingInstallPermission = false
+
     private fun installReady() {
         val ready = _update.value as? UpdateState.Ready ?: return
         if (!container.updater.canInstall()) {
+            awaitingInstallPermission = true
             container.updater.openInstallPermissionSettings()
             return
         }
+        awaitingInstallPermission = false
         runCatching { container.updater.install(ready.file) }
     }
 
     fun refreshChecks() {
         _checks.value = SystemChecks.read(app, container.pressure.hasBarometer)
+        if (awaitingInstallPermission && container.updater.canInstall()) installReady()
     }
 
     // ── 자동 진입 ──────────────────────────────────────────────
@@ -228,7 +244,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private fun applyRecommendation(rec: FloorRecommendation) {
         _drawer.update { state ->
             if (!state.open) return@update state
-            val suggested = (rec as? FloorRecommendation.Suggested)?.level
+            val suggested = (rec as? FloorRecommendation.Suggested)?.level?.takeIf { it in Floors.reel() }
             state.copy(
                 recommendation = rec,
                 selectedLevel = if (!state.userTouched && suggested != null) suggested else state.selectedLevel,
@@ -319,8 +335,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         viewModelScope.launch {
-            val previous = container.parking.setPhoto(current.id, path)
-            if (previous != null && previous != path) container.photos.delete(previous)
+            val result = container.parking.setPhoto(current.id, path)
+            if (!result.attached) {
+                container.photos.delete(path)
+            } else if (result.previousPath != null && result.previousPath != path) {
+                container.photos.delete(result.previousPath)
+            }
         }
     }
 

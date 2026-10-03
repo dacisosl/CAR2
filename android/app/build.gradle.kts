@@ -22,22 +22,53 @@ android {
         applicationId = "app.car.parking"
         minSdk = 26
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.3.2"
-
-        // 휴대폰(arm64)과 PC 에뮬레이터(x86_64)만 포함해 APK 크기를 줄인다
-        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+        versionCode = 6
+        versionName = "0.3.3"
 
         val naverKey = secret("NAVER_MAP_KEY_ID")
-        manifestPlaceholders["naverMapKeyId"] = naverKey
         buildConfigField("String", "NAVER_MAP_KEY_ID", "\"$naverKey\"")
         buildConfigField("String", "NAVER_MAP_STYLE_ID", "\"${secret("NAVER_MAP_STYLE_ID")}\"")
+    }
+
+    // github: GitHub 릴리스 APK, 앱 안 업데이트 확인 포함
+    // play: Google Play 배포용. Play 밖에서 스스로 업데이트하는 기능과 설치 권한을 넣지 않는다
+    flavorDimensions += "channel"
+    productFlavors {
+        create("github") {
+            dimension = "channel"
+            buildConfigField("boolean", "SELF_UPDATE", "true")
+            // 휴대폰(arm64)과 PC 에뮬레이터(x86_64)만 포함해 APK 크기를 줄인다
+            ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+        }
+        create("play") {
+            dimension = "channel"
+            buildConfigField("boolean", "SELF_UPDATE", "false")
+            // App Bundle은 기기별로 나눠 내려받으므로 32비트 기기까지 포함한다
+            ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
+        }
+    }
+
+    // 업로드 키는 저장소에 넣지 않는다. android/keystore.properties가 있을 때만 release 서명
+    val keystoreProps = Properties().apply {
+        val file = rootProject.file("keystore.properties")
+        if (file.exists()) file.inputStream().use { load(it) }
+    }
+    signingConfigs {
+        if (keystoreProps.getProperty("storeFile") != null) {
+            create("upload") {
+                storeFile = rootProject.file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfigs.findByName("upload")?.let { signingConfig = it }
         }
     }
     compileOptions {

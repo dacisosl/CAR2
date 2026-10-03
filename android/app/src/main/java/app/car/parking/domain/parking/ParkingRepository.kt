@@ -52,6 +52,8 @@ class ParkingRepository(
     suspend fun beginCandidate(vehicleId: String, detectedAtMs: Long, pressure: PressureReading?): CandidateEntity? =
         candidateLock.withLock {
             val connectedAt = settings.current().lastConnectedAt
+            // 연결 이벤트가 먼저 처리된 경우: 이 해제는 이미 지난 연결 세션의 것이다
+            if (connectedAt > 0L && detectedAtMs < connectedAt) return@withLock null
             val sessionKey = if (connectedAt > 0L) "$vehicleId@$connectedAt" else "$vehicleId@d$detectedAtMs"
             if (dao.candidateBySession(sessionKey) != null) return@withLock null
             val active = dao.activeCandidate(vehicleId)
@@ -125,7 +127,8 @@ class ParkingRepository(
     ): ParkingRecordEntity? {
         val record = when (target) {
             is DrawerTarget.Candidate -> {
-                val candidate = dao.candidate(target.candidateId) ?: return null
+                // 패널이 열린 사이 차량이 다시 연결돼 취소된 후보는 기록하지 않는다
+                val candidate = dao.candidate(target.candidateId)?.takeIf { it.status == CandidateStatus.READY } ?: return null
                 dao.setCandidateStatus(candidate.id, CandidateStatus.CONFIRMED)
                 if (candidate.pressureHpa != null) {
                     dao.insertReference(
@@ -188,11 +191,13 @@ class ParkingRepository(
         return record
     }
 
-    /** 홈 차량 카드에서 찍은 사진을 현재 기록에 붙인다. 이전 사진 경로를 돌려준다 */
-    suspend fun setPhoto(recordId: String, path: String): String? {
-        val existing = dao.latestRecord()?.takeIf { it.id == recordId } ?: return null
+    data class PhotoResult(val attached: Boolean, val previousPath: String?)
+
+    /** 홈 차량 카드에서 찍은 사진을 현재 기록에 붙인다 */
+    suspend fun setPhoto(recordId: String, path: String): PhotoResult {
+        val existing = dao.latestRecord()?.takeIf { it.id == recordId } ?: return PhotoResult(false, null)
         dao.upsertRecord(existing.copy(photoPath = path))
-        return existing.photoPath
+        return PhotoResult(true, existing.photoPath)
     }
 
     /** 홈의 위치 저장 아이콘. 현재 위치를 이 기록의 주차 위치로 저장한다 */

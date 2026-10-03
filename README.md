@@ -75,7 +75,9 @@
 
 ```bash
 cd android
-./gradlew assembleDebug
+./gradlew assembleGithubDebug
 ```
+
+Google Play 등록 자료(설명 문구·이미지·데이터 보안·체크리스트)는 [`store/`](store/README.md), 점검 결과는 [`docs/APP_AUDIT.md`](docs/APP_AUDIT.md).
 
 설정에 **상태바 층 표시** 켜기/끄기를 추가했습니다(CARwhere v5.9 상태바 표지판 코드 이식). 확정한 층수를 상태바 아이콘·상시 알림으로 보여주고, Android 16에서는 Live Updates 승격을 요청합니다.

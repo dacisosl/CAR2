@@ -25,13 +25,18 @@ JDK 17 이상(Android Studio 내장 JBR 가능)과 Android SDK가 필요합니�
 
 ```bash
 cd android
-./gradlew assembleDebug        # app/build/outputs/apk/debug/app-debug.apk
-./gradlew testDebugUnitTest    # 단위 테스트
+./gradlew assembleGithubDebug      # GitHub 테스트 APK: app/build/outputs/apk/github/debug/
+./gradlew bundlePlayRelease        # Play 업로드용 AAB: app/build/outputs/bundle/playRelease/
+./gradlew testGithubDebugUnitTest  # 단위 테스트
 ```
 
 `android/local.properties`에 `sdk.dir`이 없으면 Android Studio로 한 번 열거나 직접 적어 주세요. 이 파일은 커밋하지 않습니다.
 
-디버그 APK는 네이버 지도 네이티브 라이브러리가 모든 ABI로 들어 있어 약 110MB입니다. 배포 시에는 App Bundle 또는 ABI 분할을 사용합니다.
+빌드 종류(flavor):
+- `github`: GitHub 릴리스 APK. 앱 안 업데이트 확인 포함, arm64·x86_64만 포함(약 67MB).
+- `play`: Google Play용. 앱 안 업데이트와 `REQUEST_INSTALL_PACKAGES`가 없고 32비트 기기까지 포함. AAB 약 32MB.
+
+release 서명은 `android/keystore.properties`가 있을 때만 적용된다. 만드는 법은 `store/PLAY_CONSOLE_CHECKLIST.md`.
 
 ## 지도 키 (선택)
 

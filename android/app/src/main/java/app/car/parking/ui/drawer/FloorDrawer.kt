@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.snapping.SnapPosition
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.interaction.DragInteraction
@@ -116,7 +117,12 @@ fun FloorDrawer(
             Modifier
                 .fillMaxSize()
                 .background(t.backdrop)
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClose),
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClickLabel = "닫기, 저장하지 않음",
+                    onClick = onClose,
+                ),
         )
 
         if (dragging) {
@@ -148,7 +154,8 @@ fun FloorDrawer(
                         )
                     } ?: m
                 }
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { }
+                // 패널 면의 탭이 뒤 배경(닫기)으로 넘어가지 않게만 막는다. 접근성 버튼으로 노출하지 않는다
+                .pointerInput(Unit) { detectTapGestures { } }
                 .safeDrawingPadding()
                 .padding(horizontal = 16.dp),
         ) {
@@ -162,7 +169,7 @@ fun FloorDrawer(
                 Box(
                     Modifier
                         .fillMaxWidth()
-                        .height(40.dp)
+                        .height(48.dp)
                         .semantics {
                             contentDescription = "패널 이동 손잡이, 길게 눌러 좌우로 이동"
                             customActions = listOf(

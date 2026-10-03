@@ -37,6 +37,25 @@ fun updateMessage(state: UpdateState): String? = when (state) {
     is UpdateState.Failed -> state.message
 }
 
+/**
+ * 릴리스 노트에서 ‘이번 버전’ 항목만 골라 마크다운 기호 없이 보여준다.
+ * 해당 절이 없으면 앞부분을 쓴다.
+ */
+fun releaseHighlights(markdown: String): String {
+    val lines = markdown.lines().map { it.trim() }
+    val start = lines.indexOfFirst { it.startsWith("#") && it.contains("이번 버전") }
+    val section = if (start >= 0) {
+        lines.drop(start + 1).takeWhile { !it.startsWith("#") }
+    } else {
+        lines
+    }
+    return section
+        .filter { it.isNotBlank() && !it.startsWith("#") }
+        .map { it.replace("`", "").replace("**", "").replaceFirst(Regex("^[-*] "), "· ") }
+        .take(8)
+        .joinToString("\n")
+}
+
 /** 설정 맨 아래 버전 줄: 현재 버전 + 업데이트 확인/설치 */
 @Composable
 fun UpdateRow(state: UpdateState, onCheck: () -> Unit, onInstall: () -> Unit) {
@@ -49,7 +68,7 @@ fun UpdateRow(state: UpdateState, onCheck: () -> Unit, onInstall: () -> Unit) {
                 color = t.textSecondary,
                 modifier = Modifier.weight(1f),
             )
-            val label = when (state) {
+            val label = if (!BuildConfig.SELF_UPDATE) null else when (state) {
                 is UpdateState.Available -> "업데이트"
                 is UpdateState.Ready -> "설치"
                 is UpdateState.Checking, is UpdateState.Downloading -> null
@@ -60,7 +79,7 @@ fun UpdateRow(state: UpdateState, onCheck: () -> Unit, onInstall: () -> Unit) {
                 val highlight = state is UpdateState.Available || state is UpdateState.Ready
                 Box(
                     Modifier
-                        .heightIn(min = 40.dp)
+                        .heightIn(min = 48.dp)
                         .clip(t.buttonShape)
                         .let { if (highlight) it.primarySurface(t, t.buttonShape) else it }
                         .clickable(role = Role.Button, onClick = action)
@@ -105,9 +124,9 @@ fun UpdateDialog(state: UpdateState, onInstall: () -> Unit, onDismiss: () -> Uni
         title = { Text(if (info != null) "새 버전 ${info.versionName}" else "업데이트") },
         text = {
             Column {
-                info?.notes?.takeIf { it.isNotBlank() }?.let { notes ->
+                info?.notes?.let(::releaseHighlights)?.takeIf { it.isNotBlank() }?.let { notes ->
                     Text(
-                        notes.lines().filter { it.isNotBlank() }.take(8).joinToString("\n"),
+                        notes,
                         maxLines = 8,
                         overflow = TextOverflow.Ellipsis,
                         style = CarType.secondary,

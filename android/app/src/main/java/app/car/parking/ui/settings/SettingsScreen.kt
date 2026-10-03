@@ -122,7 +122,7 @@ fun SettingsScreen(
                     Modifier
                         .align(Alignment.CenterEnd)
                         .padding(end = 8.dp)
-                        .heightIn(min = 40.dp)
+                        .heightIn(min = 48.dp)
                         .clip(t.buttonShape)
                         .primarySurface(t, t.buttonShape, enabled = dirty)
                         .clickable(enabled = dirty, role = Role.Button) { onSave(draft) }

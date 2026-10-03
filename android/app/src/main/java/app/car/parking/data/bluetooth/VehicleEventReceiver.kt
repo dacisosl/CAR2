@@ -53,7 +53,16 @@ class VehicleEventReceiver : BroadcastReceiver() {
                             Log.i(TAG, "disconnect caused by Bluetooth off — not a parking event")
                             return@launch
                         }
-                        handleDisconnect(app, registered, now, settings.reconnectCheckMs)
+                        // 매니페스트 수신기는 순서대로 전달된다. 이 수신기를 6초 동안 붙잡으면 그 사이의
+                        // ACL_CONNECTED가 확인 시간이 끝난 뒤에야 도착하므로, 후보만 만들고 바로 끝낸다
+                        val candidate = app.container.parking.beginCandidate(registered, now, null)
+                        if (candidate == null) {
+                            Log.i(TAG, "duplicate disconnect merged into existing candidate")
+                        } else {
+                            app.container.appScope.launch {
+                                handleDisconnect(app, candidate.id, settings.reconnectCheckMs)
+                            }
+                        }
                     }
                 }
             } catch (t: Throwable) {
@@ -64,35 +73,29 @@ class VehicleEventReceiver : BroadcastReceiver() {
         }
     }
 
-    private suspend fun handleDisconnect(app: CarApp, vehicleId: String, detectedAt: Long, checkMs: Long) {
+    private suspend fun handleDisconnect(app: CarApp, candidateId: String, checkMs: Long) {
         val container = app.container
         // 해제 직후 기압 스냅샷. 재연결 확인과 동시에 측정한다
         val pressure = scope.async { container.pressure.sample() }
-        val candidate = container.parking.beginCandidate(vehicleId, detectedAt, null)
-        if (candidate == null) {
-            Log.i(TAG, "duplicate disconnect merged into existing candidate")
-            pressure.cancel()
-            return
-        }
         delay(checkMs)
         val reading = pressure.await()
         if (reading != null) {
-            container.db.dao().candidate(candidate.id)?.let {
+            container.db.dao().candidate(candidateId)?.let {
                 container.db.dao().upsertCandidate(it.copy(pressureHpa = reading.hpa, pressureAt = reading.measuredAtMs))
             }
         }
         if (bluetoothTurningOff(app)) {
-            container.parking.cancelCandidate(candidate.id)
+            container.parking.cancelCandidate(candidateId)
             return
         }
-        if (!container.parking.finishReconnectCheck(candidate.id)) {
+        if (!container.parking.finishReconnectCheck(candidateId)) {
             Log.i(TAG, "reconnected within check window — candidate cancelled")
             return
         }
         val wasBackground = withContext(Dispatchers.Main) {
             !ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
         }
-        val launched = AutoLauncher.launchCandidate(app, candidate.id, wasBackground)
+        val launched = AutoLauncher.launchCandidate(app, candidateId, wasBackground)
         Log.i(TAG, "candidate ready, activity launch requested=$launched background=$wasBackground")
     }
 

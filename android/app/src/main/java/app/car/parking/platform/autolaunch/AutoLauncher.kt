@@ -35,16 +35,15 @@ object AutoLauncher {
             .putExtra(EXTRA_WAS_BACKGROUND, wasBackground)
             .putExtra(EXTRA_CANDIDATE_ID, candidateId)
 
-    /** @return Activity 실행을 요청했으면 true. 실제로 화면이 떴는지는 Activity 쪽에서 기록한다. */
+    /**
+     * 기본은 화면 직접 표시. 시스템이 백그라운드 실행을 막아도 startActivity는 예외 없이 무시될 수 있어
+     * 보조 알림을 함께 올리고, 화면이 실제로 열리면(openCandidate) 바로 지운다.
+     * @return Activity 실행을 요청했으면 true
+     */
     fun launchCandidate(context: Context, candidateId: String, wasBackground: Boolean): Boolean {
-        if (canDrawOverlays(context)) {
-            val started = runCatching {
-                context.startActivity(intent(context, candidateId, wasBackground))
-            }.isSuccess
-            if (started) return true
-        }
         postFallback(context, candidateId)
-        return false
+        if (!canDrawOverlays(context)) return false
+        return runCatching { context.startActivity(intent(context, candidateId, wasBackground)) }.isSuccess
     }
 
     fun cancelFallback(context: Context) {
@@ -70,7 +69,7 @@ object AutoLauncher {
         val notification = NotificationCompat.Builder(context, FALLBACK_CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_parking)
             .setContentTitle("주차 층수를 기록하세요")
-            .setContentText("자동 표시 설정이 꺼져 있어 알림으로 알려드려요")
+            .setContentText("눌러서 주차 층수를 저장하세요")
             .setContentIntent(pending)
             .setAutoCancel(true)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)

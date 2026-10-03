@@ -251,8 +251,8 @@ private fun VehicleCard(
                 onClick = onTakePhoto,
                 tint = t.onPrimary,
                 background = t.primary.copy(alpha = 0.82f),
-                size = 40.dp,
-                iconSize = 20.dp,
+                size = 48.dp,
+                iconSize = 22.dp,
                 modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp),
             )
         } else {

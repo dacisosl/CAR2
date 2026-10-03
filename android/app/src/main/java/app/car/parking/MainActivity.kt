@@ -5,7 +5,9 @@ import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
+import android.graphics.Color
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -23,13 +25,17 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        // 앱은 항상 밝은 화면이므로 시스템 다크 모드와 관계없이 상태바·내비게이션 아이콘을 어둡게 둔다
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
+        )
         if (savedInstanceState == null) handleEntry(intent)
         setContent { CarRoot(viewModel, onUnlockThen = ::unlockThen) }
-        // 자동 진입 패널을 저장하거나 닫으면 잠금 화면 위 표시를 해제한다
+        // 잠금 화면 위 표시는 자동 진입으로 열린 패널이 떠 있는 동안만 유지한다
         lifecycleScope.launch {
-            viewModel.drawer.map { it.open }.distinctUntilChanged().drop(1).collect { open ->
-                if (!open) setLockScreenEntry(false)
+            viewModel.drawer.map { it.open && it.autoEntry }.distinctUntilChanged().drop(1).collect { shown ->
+                setLockScreenEntry(shown)
             }
         }
     }
@@ -46,7 +52,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleEntry(intent: Intent) {
-        val auto = intent.getBooleanExtra(AutoLauncher.EXTRA_AUTO_ENTRY, false)
+        val fromHistory = intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0
+        val auto = !fromHistory && intent.getBooleanExtra(AutoLauncher.EXTRA_AUTO_ENTRY, false)
+        if (fromHistory) return
         // 자동 진입일 때만 잠금 화면 위 표시·화면 켜기. 보안 잠금 해제는 우회하지 않는다
         setLockScreenEntry(auto)
         viewModel.handleEntry(
