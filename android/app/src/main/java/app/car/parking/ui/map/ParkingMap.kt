@@ -178,6 +178,8 @@ private fun NaverMapHost(
     AndroidView(
         factory = {
             mapView.getMapAsync { naverMap ->
+                // 휴대폰 언어와 관계없이 지명은 한국어로 표시한다
+                naverMap.locale = java.util.Locale.KOREAN
                 naverMap.uiSettings.apply {
                     isZoomControlEnabled = false
                     isLocationButtonEnabled = false
