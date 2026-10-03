@@ -25,6 +25,7 @@ class ThemeAndSideTest {
         assertEquals(AppThemeId.Graphite, AppThemeId.from("classic"))
         assertEquals(AppThemeId.Forest, AppThemeId.from("forest"))
         assertEquals(AppThemeId.Espresso, AppThemeId.from("espresso"))
+        assertEquals(AppThemeId.Uhd, AppThemeId.from("uhd"))
     }
 
     @Test

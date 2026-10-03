@@ -89,7 +89,7 @@ fun UpdateRow(state: UpdateState, onCheck: () -> Unit, onInstall: () -> Unit) {
                     Text(
                         label,
                         style = CarType.secondary.copy(fontWeight = FontWeight.Bold),
-                        color = if (highlight) t.onPrimary else t.black,
+                        color = if (highlight) t.onFeature else t.black,
                     )
                 }
             }

@@ -77,7 +77,7 @@ object ParkingWidgets {
         val floor = record?.let { Floors.label(it.floorLevel) } ?: "—"
         val elapsedMs = record?.let { now - it.detectedAt }
         val elapsed = elapsedMs?.let { elapsedText(it) } ?: "기록 없음"
-        val elapsedColor = elapsedMs?.let { ElapsedTone.color(it, t.black) } ?: t.textSecondary
+        val elapsedColor = elapsedMs?.let { ElapsedTone.color(it, t) } ?: t.textSecondary
 
         views.setInt(R.id.widget_bg, "setColorFilter", t.white.toArgb())
         views.setTextViewText(R.id.widget_floor, floor)

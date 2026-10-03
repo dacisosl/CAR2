@@ -1,5 +1,6 @@
 package app.car.parking.ui
 
+import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,6 +29,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -76,6 +80,7 @@ fun CarRoot(viewModel: AppViewModel, onUnlockThen: (() -> Unit) -> Unit) {
     LaunchedEffect(checks.notificationsAllowed) { if (checks.notificationsAllowed) viewModel.resyncStatusBar() }
 
     CarTheme(settings.appTheme) {
+        SystemBarAppearance(dark = app.car.parking.ui.theme.LocalCarTokens.current.dark)
         val actions = rememberSystemActions(viewModel::refreshChecks)
         when (screen) {
             Screen.Onboarding -> OnboardingScreen(
@@ -146,6 +151,19 @@ fun CarRoot(viewModel: AppViewModel, onUnlockThen: (() -> Unit) -> Unit) {
         viewingPhoto?.let { PhotoViewer(it) { viewingPhoto = null } }
         if (updatePrompt && !drawer.open) {
             UpdateDialog(update, onInstall = viewModel::downloadAndInstall, onDismiss = viewModel::dismissUpdatePrompt)
+        }
+    }
+}
+
+/** 상태바·내비게이션 아이콘 명암. 밝은 테마는 어두운 아이콘, UHD는 밝은 아이콘. 시스템 다크 모드는 따르지 않는다 */
+@Composable
+private fun SystemBarAppearance(dark: Boolean) {
+    val view = LocalView.current
+    SideEffect {
+        val window = (view.context as? Activity)?.window ?: return@SideEffect
+        WindowCompat.getInsetsController(window, view).apply {
+            isAppearanceLightStatusBars = !dark
+            isAppearanceLightNavigationBars = !dark
         }
     }
 }

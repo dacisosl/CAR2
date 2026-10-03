@@ -153,7 +153,7 @@ fun FloorDrawer(
                         .width(panelWidth)
                         .height(panelHeight)
                         .padding(6.dp)
-                        .border(2.dp, t.white.copy(alpha = 0.9f), RoundedCornerShape(12.dp)),
+                        .border(2.dp, if (t.dark) t.primary else t.white.copy(alpha = 0.9f), RoundedCornerShape(12.dp)),
                 )
             }
 
@@ -166,7 +166,7 @@ fun FloorDrawer(
                     .shadow(if (dragging) 16.dp else 8.dp, panelShape)
                     .clip(panelShape)
                     .background(t.white)
-                    .let { m -> t.accentSilver?.let { m.border(1.dp, it, panelShape) } ?: m }
+                    .let { m -> (t.accentSilver ?: t.cardBorder)?.let { m.border(1.dp, it, panelShape) } ?: m }
                     // 패널 면의 탭이 뒤 배경(저장 후 닫기)으로 넘어가지 않게만 막는다. 접근성 버튼으로 노출하지 않는다
                     .pointerInput(Unit) { detectTapGestures { } }
                     .padding(horizontal = 16.dp),
@@ -305,7 +305,7 @@ fun FloorDrawer(
                         Text(
                             if (state.saving) "저장 중" else "저장",
                             style = CarType.body.copy(fontWeight = FontWeight.Bold),
-                            color = if (canSave) t.onPrimary else t.inactive,
+                            color = if (canSave) t.onFeature else t.inactive,
                         )
                     }
                 }
@@ -444,7 +444,7 @@ fun FloorReel(selected: Int?, onSelect: (Int) -> Unit, modifier: Modifier = Modi
                 ) {
                     // 같은 글자를 두 번 그린다: 띠 밖은 검정, 띠 안은 띠 위 글자색. 경계에서 색이 정확히 갈린다
                     ReelLabel(label, t.black, distance, insideBand = false)
-                    ReelLabel(label, if (filled) t.onPrimary else t.black, distance, insideBand = true)
+                    ReelLabel(label, if (filled) t.onFeature else t.black, distance, insideBand = true)
                 }
             }
         }
