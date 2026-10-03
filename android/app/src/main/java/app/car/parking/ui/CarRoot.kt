@@ -125,7 +125,7 @@ fun CarRoot(viewModel: AppViewModel, onUnlockThen: (() -> Unit) -> Unit) {
                         },
                     )
                     if (drawer.open) {
-                        BackHandler { viewModel.closeDrawer() }
+                        BackHandler { viewModel.dismissDrawer() }
                         FloorDrawer(
                             state = drawer,
                             side = settings.drawerSide,
@@ -133,6 +133,7 @@ fun CarRoot(viewModel: AppViewModel, onUnlockThen: (() -> Unit) -> Unit) {
                             onSideChange = { viewModel.setDrawerSide(it) },
                             onSelect = viewModel::selectLevel,
                             onClose = viewModel::closeDrawer,
+                            onDismiss = viewModel::dismissDrawer,
                             onSave = viewModel::save,
                             onStatusBarChange = viewModel::setDrawerStatusBar,
                             notificationsAllowed = checks.notificationsAllowed,

@@ -305,6 +305,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _drawer.update { DrawerUiState() }
     }
 
+    /**
+     * 패널 바깥·뒤로 가기: 릴에서 마지막으로 멈춘 층으로 저장하고 닫는다.
+     * 고른 층이 없거나 기존 기록에서 바뀐 것이 없으면 저장하지 않고 닫는다.
+     */
+    fun dismissDrawer() {
+        val state = _drawer.value
+        if (state.saving) return
+        val level = state.selectedLevel ?: return closeDrawer()
+        val existing = (record.value as? RecordState.Loaded)?.record
+        val target = state.target
+        if (target is DrawerTarget.Edit && existing != null && existing.id == target.recordId &&
+            existing.floorLevel == level && existing.statusBarShown == state.statusBarOn
+        ) return closeDrawer()
+        save()
+    }
+
     fun save() {
         val state = _drawer.value
         val level = state.selectedLevel ?: return
