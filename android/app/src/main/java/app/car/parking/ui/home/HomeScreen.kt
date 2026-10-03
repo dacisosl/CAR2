@@ -53,6 +53,7 @@ import app.car.parking.ui.theme.CarType
 import app.car.parking.ui.theme.ElapsedTone
 import app.car.parking.ui.theme.LocalCarTokens
 import app.car.parking.ui.LocationSaveStatus
+import app.car.parking.ui.theme.cardSurface
 import app.car.parking.ui.theme.primarySurface
 import kotlinx.coroutines.delay
 
@@ -90,14 +91,20 @@ fun HomeScreen(
                     .verticalScroll(rememberScrollState()),
             ) {
                 Spacer(Modifier.height(8.dp))
-                if (record != null) Text("주차한 지", style = CarType.secondary, color = t.textSecondary)
-                Text(
-                    text = record?.let { elapsedText(now - it.detectedAt) } ?: "아직 기록이 없어요",
-                    style = if (record != null) CarType.elapsed else CarType.title,
-                    // 2시간부터 진한 초록, 3시간부터 버건디
-                    color = record?.let { ElapsedTone.color(now - it.detectedAt, t.black) } ?: t.black,
-                    modifier = Modifier.semantics { heading() },
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        if (record != null) Text("주차한 지", style = CarType.secondary, color = t.textSecondary)
+                        Text(
+                            text = record?.let { elapsedText(now - it.detectedAt) } ?: "아직 기록이 없어요",
+                            style = if (record != null) CarType.elapsed else CarType.title,
+                            // 2시간부터 진한 초록, 3시간부터 버건디(UHD는 어두운 바탕용 밝은 색)
+                            color = record?.let { ElapsedTone.color(now - it.detectedAt, t) } ?: t.black,
+                            modifier = Modifier.semantics { heading() },
+                        )
+                    }
+                    // UHD: 0~3시간 계기판
+                    if (t.dial && record != null) ElapsedDial(now - record.detectedAt)
+                }
                 Spacer(Modifier.height(16.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     FloorCard(record, onOpenFloor, Modifier.weight(1f))
@@ -205,12 +212,12 @@ private fun FloorCard(record: ParkingRecordEntity?, onClick: () -> Unit, modifie
             .padding(16.dp),
     ) {
         Column {
-            Text(if (record == null) "층수 기록" else "주차 층수", style = CarType.secondary, color = t.onPrimary)
+            Text(if (record == null) "층수 기록" else "주차 층수", style = CarType.secondary, color = t.onFeature)
             Spacer(Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(label ?: "—", style = CarType.homeFloor, color = t.onPrimary, maxLines = 1)
+                Text(label ?: "—", style = CarType.homeFloor, color = t.onFeature, maxLines = 1)
                 Spacer(Modifier.width(4.dp))
-                Icon(painterResource(R.drawable.ic_chevron_right), contentDescription = null, tint = t.onPrimary, modifier = Modifier.size(24.dp))
+                Icon(painterResource(R.drawable.ic_chevron_right), contentDescription = null, tint = t.onFeature, modifier = Modifier.size(24.dp))
             }
         }
     }
@@ -230,7 +237,7 @@ private fun VehicleCard(
         modifier
             .heightIn(min = 124.dp)
             .clip(t.cardShape)
-            .background(t.surface)
+            .cardSurface(t, t.cardShape)
             .let { m ->
                 when {
                     // 사진이 있으면 미리보기를 눌러 크게 본다

@@ -81,7 +81,11 @@ fun ParkingMap(
     var map by remember { mutableStateOf<NaverMap?>(null) }
     var retryKey by remember { mutableStateOf(0) }
 
-    Box(modifier.clip(shape).background(MapColors.background)) {
+    val border = LocalCarTokens.current.cardBorder
+    Box(
+        modifier.clip(shape).background(MapColors.background)
+            .let { m -> border?.let { m.border(1.dp, it, shape) } ?: m },
+    ) {
         when (connection) {
             MapConnection.NoKey, MapConnection.AuthFailed -> MapUnavailable(
                 record = record,

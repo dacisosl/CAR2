@@ -83,7 +83,7 @@ fun PrimaryButton(
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, style = CarType.body.copy(fontWeight = FontWeight.Bold), color = if (enabled) t.onPrimary else t.inactive)
+        Text(text, style = CarType.body.copy(fontWeight = FontWeight.Bold), color = if (enabled) t.onFeature else t.inactive)
     }
 }
 

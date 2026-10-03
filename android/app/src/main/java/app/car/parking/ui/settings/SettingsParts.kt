@@ -46,6 +46,7 @@ import app.car.parking.ui.theme.CarTokens
 import app.car.parking.ui.theme.CarType
 import app.car.parking.ui.theme.LocalCarTokens
 import app.car.parking.ui.theme.MapColors
+import app.car.parking.ui.theme.cardSurface
 import app.car.parking.ui.theme.primarySurface
 
 @Composable
@@ -58,7 +59,7 @@ fun SectionTitle(text: String, modifier: Modifier = Modifier) {
     )
 }
 
-/** 미리보기 카드 4개(2×2). 카드 전체를 눌러 선택하고 즉시 적용한다 */
+/** 미리보기 카드 5개(2열, 마지막 줄은 한 칸). 카드 전체를 눌러 선택하고 즉시 적용한다 */
 @Composable
 fun ThemeChooser(current: AppThemeId, onSelect: (AppThemeId) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
@@ -91,6 +92,8 @@ fun ThemeChooser(current: AppThemeId, onSelect: (AppThemeId) -> Unit) {
                         )
                     }
                 }
+                // 홀수 개일 때 마지막 카드도 반 폭으로
+                if (pair.size == 1) Spacer(Modifier.weight(1f))
             }
         }
     }
@@ -130,9 +133,9 @@ private fun ThemePreview(selected: Boolean) {
                     .clip(t.featureCardShape)
                     .primarySurface(t, t.featureCardShape),
                 contentAlignment = Alignment.Center,
-            ) { Text("B2", color = t.onPrimary, style = CarType.body.copy(fontWeight = FontWeight.ExtraBold)) }
+            ) { Text("B2", color = t.onFeature, style = CarType.body.copy(fontWeight = FontWeight.ExtraBold)) }
             Box(
-                Modifier.weight(1f).height(34.dp).clip(t.cardShape).background(t.surface).padding(4.dp),
+                Modifier.weight(1f).height(34.dp).clip(t.cardShape).cardSurface(t, t.cardShape).padding(4.dp),
                 contentAlignment = Alignment.Center,
             ) { Image(painterResource(t.vehicleRes), null, contentScale = ContentScale.Fit, colorFilter = t.vehicleFilter) }
         }
@@ -251,13 +254,13 @@ fun VehicleList(
                         Text(
                             device.name ?: "이름 없는 기기",
                             style = CarType.body.copy(fontWeight = FontWeight.Bold),
-                            color = if (selected) t.onPrimary else t.black,
+                            color = if (selected) t.onFeature else t.black,
                         )
                         if (device.likelyVehicle) {
-                            Text("차량 오디오로 보이는 기기", style = CarType.label, color = if (selected) t.onPrimary else t.textSecondary)
+                            Text("차량 오디오로 보이는 기기", style = CarType.label, color = if (selected) t.onFeature else t.textSecondary)
                         }
                     }
-                    if (selected) Icon(painterResource(R.drawable.ic_check), "선택됨", tint = t.onPrimary)
+                    if (selected) Icon(painterResource(R.drawable.ic_check), "선택됨", tint = t.onFeature)
                 }
             }
         }

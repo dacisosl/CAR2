@@ -25,7 +25,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // 앱은 항상 밝은 화면이므로 시스템 다크 모드와 관계없이 상태바·내비게이션 아이콘을 어둡게 둔다
+        // 시스템 다크 모드와 관계없이 시작은 어두운 아이콘. 어두운 UHD 테마에서는 CarRoot가 밝은 아이콘으로 바꾼다
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),

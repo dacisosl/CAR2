@@ -25,6 +25,7 @@ class ThemeAndSideTest {
         assertEquals(AppThemeId.Graphite, AppThemeId.from("classic"))
         assertEquals(AppThemeId.Forest, AppThemeId.from("forest"))
         assertEquals(AppThemeId.Espresso, AppThemeId.from("espresso"))
+        assertEquals(AppThemeId.Uhd, AppThemeId.from("uhd"))
     }
 
     @Test
@@ -139,23 +140,25 @@ class UpdateVersionTest {
 class FloorSignTest {
     private fun sign(label: String) = app.car.parking.platform.statusbar.FloorSign.of(label)
     private val B = app.car.parking.platform.statusbar.FloorSign.BLACK
+    private val R = app.car.parking.platform.statusbar.FloorSign.BURGUNDY
+    private val G = app.car.parking.platform.statusbar.FloorSign.GREEN
     private val W = app.car.parking.platform.statusbar.FloorSign.WHITE
 
     @Test
-    fun aboveGroundBlackPlateCyclesWhiteGreenSilver() {
-        listOf("1F", "2F", "3F", "4F").forEach { assertEquals(B, sign(it).plate) }
-        assertEquals(W, sign("1F").text)
-        assertEquals(app.car.parking.platform.statusbar.FloorSign.GREEN_ON_BLACK, sign("2F").text)
-        assertEquals(app.car.parking.platform.statusbar.FloorSign.SILVER_ON_BLACK, sign("3F").text)
-        assertEquals(W, sign("4F").text)
+    fun aboveGroundPlateCyclesBlackBurgundyGreen() {
+        assertEquals(listOf(B, R, G, B, R, G), listOf("1F", "2F", "3F", "4F", "5F", "6F").map { sign(it).plate })
+        listOf("1F", "2F", "3F", "4F").forEach { assertEquals(W, sign(it).text) }
     }
 
     @Test
-    fun basementWhitePlateCyclesBlackGreenSilver() {
-        listOf("B1", "B2", "B3", "B4").forEach { assertEquals(W, sign(it).plate) }
-        assertEquals(B, sign("B1").text)
-        assertEquals(app.car.parking.platform.statusbar.FloorSign.GREEN_ON_WHITE, sign("B2").text)
-        assertEquals(app.car.parking.platform.statusbar.FloorSign.SILVER_ON_WHITE, sign("B3").text)
-        assertEquals(B, sign("B4").text)
+    fun basementPlateCyclesBlackBurgundyGreen() {
+        assertEquals(listOf(B, R, G, B, R, G), listOf("B1", "B2", "B3", "B4", "B5", "B6").map { sign(it).plate })
+        listOf("B1", "B2", "B3", "B4").forEach { assertEquals(W, sign(it).text) }
+    }
+
+    @Test
+    fun unselectedIsBlackPlate() {
+        assertEquals(B, sign("P").plate)
+        assertEquals(W, sign("P").text)
     }
 }

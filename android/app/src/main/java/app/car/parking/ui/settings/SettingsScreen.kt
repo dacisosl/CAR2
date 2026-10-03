@@ -133,7 +133,7 @@ fun SettingsScreen(
                     Text(
                         "저장",
                         style = CarType.secondary.copy(fontWeight = FontWeight.Bold),
-                        color = if (dirty) t.onPrimary else t.inactive,
+                        color = if (dirty) t.onFeature else t.inactive,
                     )
                 }
             }
