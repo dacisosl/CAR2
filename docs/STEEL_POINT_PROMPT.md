@@ -1,0 +1,20 @@
+# 스틸 포인트 샘플 생성 기록
+
+모드: 내장 imagegen, 참조 이미지 기반 리디자인. CLI/API는 사용하지 않음.
+최신 사용자 기준: 블랙·화이트가 기본, 스틸은 작은 포인트. 설정에서 클래식 / 스틸 포인트 선택.
+결과: `design/app-design-steel-sample.png`, 원본 1672×941px. 생성 요청의 3840×2160은 실제 출력 해상도가 아님.
+참조: `design/app-design-final.png` (레이아웃), `assets/logo/car-logo.png` (브랜드).
+
+```text
+Use case: ui-mockup / style-transfer.
+Asset type: polished Android parking-record app sample presentation, landscape 3840x2160 requested, four full phone screens side by side on a quiet white studio background.
+Input image 1 is the EDIT TARGET and layout/brand invariant: retain its CAR logo, home hierarchy, simplified side-profile vehicle direction and compact floor drawer actions. Input image 2 is the exact black CAR / 주차기록 logo supporting brand reference.
+LATEST USER CHANGE: BLACK AND WHITE MUST BE THE BASE. STEEL IS ONLY A SMALL ACCENT. Do NOT create an all-dark UI or large brushed-metal surfaces. Mostly white screens, matte black typography and floor/save/primary surfaces, 90–95 percent monochrome. The Cybertruck-inspired feel comes from crisp angular geometry, minimal geometric side-profile car, and 5–10 percent delicate neutral silver accents. Thin brushed-silver frame around the black floor card, tiny silver corner chamfers, fine silver button outline. No metal wallpaper. No metal letters. Logo remains black. No navy, neon, colorful accent, HUD, Tesla or Cybertruck brand emblems. Car is a simple generic angular SIDE PROFILE symbol: roof, body and two wheels only, mostly black with one small silver body detail; instantly a car.
+Four screen titles in Korean above phone frames: "홈", "층수 기록", "테마 설정", "처음 시작".
+Screen 1 HOME: white ground. Compact black CAR/주차기록 logo upper left. Bluetooth icon next to settings gear upper right, ready icon indicated by black mark and faint gray fill, no status text row. Label "주차한 지", large "2시간 13분". Left black floor card labeled "주차 층수" with white "B2" and very narrow silver edge, small chamfered corners; right white/pale-gray "내 차량" card with generic minimal black angular side-profile car. Heading "센트럴 주차장", detail "C구역 · 24번". A large ordinary familiar pale gray street map, black P pin with B2 badge, small "예시 지도". No bottom CTA, no "내 차 위치 보기", no "기록 수정".
+Screen 2 FLOOR DRAWER: same white home dimmed behind a LEFT white drawer taking about 55 percent of screen. Small drag grip, heading "주차 층수" plus close X, recommendation "B2로 예상돼요". Vertical reel 1F B1 B2 B3 B4, black center selection band with white B2 and tiny silver border. Bottom compact camera ICON ONLY square and small black "저장" button in one horizontal row. Both fully inside drawer, neither over dimmed area. No "사진 추가" words. Panel body is WHITE, no large steel surface.
+Screen 3 THEME SETTINGS: white screen and black type, top "설정", back arrow. Section "디자인 테마". Two small preview tiles side by side: "클래식" subtitle "블랙 · 화이트" and "스틸 포인트" subtitle "얇은 실버 디테일". BOTH preview cards must have WHITE background, black tiny content; steel point preview distinguished ONLY by silver outlines and angular corner details. Steel point radio selected with simple black check. Below readable "선택하면 바로 적용돼요". Then plain "사이드바 위치" two compact options "왼쪽" "오른쪽", followed by quiet "자동 기록" toggle enabled. No giant metallic switch or dark full-screen theme card.
+Screen 4 WELCOME: white generous space. Black exact CAR/주차기록 logo near upper center, generic minimal black angular side-profile car and small black P pin. Headline accurate "주차 위치를" / "쉽게 기억하세요". Support "차에서 내리면" / "주차 기록을 도와드려요". Quiet "차량 선택 · 권한 확인 · 연결 테스트". Bottom black button "내 차량 연결하기" with a very fine silver outline, secondary "나중에 설정".
+All four fully framed straight-on consistent modern Android phones, elegant typography, restrained flat UI, crisp precise details. The material accent should look luxurious but remain subordinate to black/white simplicity. No red annotations, no decorative controls, no photographic car. Ensure all Korean copy is spelled correctly. This is a revised app sample, keep the user functional restrictions exactly.
+```
+

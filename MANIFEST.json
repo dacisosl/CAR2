@@ -1,0 +1,282 @@
+{
+  "project": "CAR · 주차기록",
+  "version": "1.2",
+  "preparedDate": "2026-10-03",
+  "platform": "Android",
+  "packageType": "design-and-development-handoff",
+  "nativeAndroidImplementationIncluded": false,
+  "browserUiPrototypeIncluded": true,
+  "sourceOfTruth": [
+    "docs/REQUIREMENTS.md",
+    "docs/APP_DESIGN.md",
+    "docs/MAP_DESIGN.md"
+  ],
+  "manifestExcludesItself": true,
+  "files": [
+    {
+      "path": "AGENTS.md",
+      "bytes": 3136,
+      "sha256": "a3298f72c645905d4d1fee26577be94b6e08a8c393cc72eb1add0567ae583f56"
+    },
+    {
+      "path": "assets/logo/car-logo.png",
+      "bytes": 396584,
+      "sha256": "d738363becf5f74e68c997e2d8fa1f7363de7bf3fd6bed36617718b675a855ce",
+      "image": {
+        "width": 1774,
+        "height": 887,
+        "mode": "RGBA",
+        "alphaRange": [
+          0,
+          255
+        ],
+        "cornerAlpha": 0
+      }
+    },
+    {
+      "path": "assets/map/map-demo.svg",
+      "bytes": 1413,
+      "sha256": "f8bb5dad4b5003e438e2760282892867cd258958513747e4e464206dfc7a294c"
+    },
+    {
+      "path": "assets/vehicle/car-side.png",
+      "bytes": 361288,
+      "sha256": "395aeb357bfc03153165538ec48a064c6ba15c469693bc3982720f3be52f7e4f",
+      "image": {
+        "width": 2172,
+        "height": 724,
+        "mode": "RGBA",
+        "alphaRange": [
+          0,
+          255
+        ],
+        "cornerAlpha": 0
+      }
+    },
+    {
+      "path": "assets/vehicle/car-steel.svg",
+      "bytes": 698,
+      "sha256": "4963c01b2464dc010dcbe82910c79b6537c514999f153a3cd64c5804999639b3"
+    },
+    {
+      "path": "design/app-design-final.png",
+      "bytes": 1196864,
+      "sha256": "7afa242027def381e7fc75df8627cc6e3a7b39f5d9ee24e110b5915d04ab5d90",
+      "image": {
+        "width": 1881,
+        "height": 836,
+        "mode": "RGB"
+      }
+    },
+    {
+      "path": "design/app-design-map-v1.2.png",
+      "bytes": 1264099,
+      "sha256": "577addcc97f4d05fcb7cfbee88cfd6805913daeb2f673358c085f2d54e952f8b",
+      "image": {
+        "width": 1672,
+        "height": 941,
+        "mode": "RGB"
+      }
+    },
+    {
+      "path": "design/app-design-steel-sample.png",
+      "bytes": 1305221,
+      "sha256": "1611872defc1fd199957318f06038a698c8f1e36b45c541f16649d564a7518b3",
+      "image": {
+        "width": 1672,
+        "height": 941,
+        "mode": "RGB"
+      }
+    },
+    {
+      "path": "design/branding-preview.png",
+      "bytes": 836134,
+      "sha256": "c2a0d0161311e12ea25318f9a451def0b4acf29ac5f27791542eda4c94933ac5",
+      "image": {
+        "width": 2172,
+        "height": 724,
+        "mode": "RGB"
+      }
+    },
+    {
+      "path": "design/gloss-palette-options.png",
+      "bytes": 1254441,
+      "sha256": "bb494b5a4317426e78c21871dd925cadfdcd58b266f6c34c700c0a336617e25b",
+      "image": {
+        "width": 1672,
+        "height": 941,
+        "mode": "RGB"
+      }
+    },
+    {
+      "path": "design/tokens.json",
+      "bytes": 3204,
+      "sha256": "2cb6927b1f84fe3052891eea7757e91fabdd3a3a190b072cd56f36c303cab1f2"
+    },
+    {
+      "path": "docs/ACCEPTANCE_TESTS.md",
+      "bytes": 4653,
+      "sha256": "9c3dafc0dfea4d503b4bb6382b49034b7d86af416ba53e3ec30e63824c049c45"
+    },
+    {
+      "path": "docs/APP_DESIGN.md",
+      "bytes": 9407,
+      "sha256": "7fc5e7e99c458a911ddb63b2964d57398aaab97e1c0820dc594e7bcac2a17425"
+    },
+    {
+      "path": "docs/ASSET_GUIDE.md",
+      "bytes": 2933,
+      "sha256": "c0bd1e354af27aa8c177c46d62e9db3eb427dc322d80fd88b67090820c2b4274"
+    },
+    {
+      "path": "docs/DECISIONS.md",
+      "bytes": 2400,
+      "sha256": "00d6f4fc10ec0fcc8061c8ebf1ef38ed9a18cbe538886ab2260d5a2cb2e83bd1"
+    },
+    {
+      "path": "docs/DEVELOPMENT_PLAN.md",
+      "bytes": 5935,
+      "sha256": "0153373a323499c0cf10fe28d0446fa5fcb143c2609626dd8ec7c38ac8ad38ed"
+    },
+    {
+      "path": "docs/FINISH_OPTIONS.md",
+      "bytes": 2405,
+      "sha256": "10023135bdbbb80ab09d7ea0c32078b8668621f3b9ff9255e318d963e1c8dff4"
+    },
+    {
+      "path": "docs/IMAGEGEN_PROMPTS.md",
+      "bytes": 10486,
+      "sha256": "d586614aa89f9b7ed51ca82453e80f5c8ab253a4cc16ac0e25d08b0e44b39858"
+    },
+    {
+      "path": "docs/MAP_DESIGN.md",
+      "bytes": 7595,
+      "sha256": "cdcf74123816781a35e9d934eeabd2f9e41f5641c5838aa498013414df6a88b4"
+    },
+    {
+      "path": "docs/MAP_IMAGEGEN_PROMPT.md",
+      "bytes": 2960,
+      "sha256": "5fd5cbee5177eca0487ee98d12e1bb01c61ae5307b51a5b058916cefe1207b0d"
+    },
+    {
+      "path": "docs/PALETTE_IMAGEGEN_PROMPT.md",
+      "bytes": 4295,
+      "sha256": "e86a2b9096dd30a8f772e547ccbfc5d46a1d6fb17446fc33d9caa264adaa2549"
+    },
+    {
+      "path": "docs/REQUIREMENTS.md",
+      "bytes": 4079,
+      "sha256": "6de021316bf750e4f41e248b1c97b48747c4090b04574b1208d05c06198311a6"
+    },
+    {
+      "path": "docs/SOURCES.md",
+      "bytes": 2804,
+      "sha256": "969f01d3f57c11e82b4d2d50414219d5dbe645c17b6083b967e614e797be5078"
+    },
+    {
+      "path": "docs/STEEL_POINT_PROMPT.md",
+      "bytes": 4632,
+      "sha256": "63b0103f6c6be85349ef0073045ba2770b019dbb3389c1c57a7033c6178d4a31"
+    },
+    {
+      "path": "docs/TECHNICAL_SPEC.md",
+      "bytes": 10213,
+      "sha256": "a3a4644d365cf95c545975fab494cf193f446f46c582b6f2e9c60f00c452bc68"
+    },
+    {
+      "path": "docs/THEME_DESIGN.md",
+      "bytes": 4355,
+      "sha256": "2ac52e9bad1683168342dde9bd191b1e2f1b2eb60d5c0fdea0310d823ee77414"
+    },
+    {
+      "path": "IMPLEMENTATION_PROMPT.md",
+      "bytes": 3689,
+      "sha256": "a9960af46bb7c32f24c09d74683e81d9a7de08dcf8bfdfa93452d59107232138"
+    },
+    {
+      "path": "prototype/app.js",
+      "bytes": 17354,
+      "sha256": "7bdf31a70b41c57dab517cd419ab6099d1d250ecfbf58f5a86688d9e51f98ce0"
+    },
+    {
+      "path": "prototype/index.html",
+      "bytes": 10476,
+      "sha256": "41a4d10d9bccb1cc2738a43ae65a51e8164209442d1ea69d2b96a6b1d9e5553c"
+    },
+    {
+      "path": "prototype/styles.css",
+      "bytes": 16183,
+      "sha256": "4a6c406a12e6a69318e2e92d7bc8a5d7a49267347433c3fcd0bd0c02309aab38"
+    },
+    {
+      "path": "README.md",
+      "bytes": 6112,
+      "sha256": "95921d8aa2503e709e17991410655a1828de96bc4bc659a2ced045152f8dbd2e"
+    },
+    {
+      "path": "references/gloss-layout-reference.png",
+      "bytes": 1196864,
+      "sha256": "7afa242027def381e7fc75df8627cc6e3a7b39f5d9ee24e110b5915d04ab5d90",
+      "image": {
+        "width": 1881,
+        "height": 836,
+        "mode": "RGB"
+      }
+    },
+    {
+      "path": "references/layout-home.png",
+      "bytes": 30326,
+      "sha256": "18635a53ebca697df783f1037fab43307074502a05c4703fea89acd1a633461c",
+      "image": {
+        "width": 436,
+        "height": 610,
+        "mode": "RGB"
+      }
+    },
+    {
+      "path": "references/layout-sidebar.png",
+      "bytes": 31981,
+      "sha256": "e8ee044b53d173aa6652be7ceb29257bcf362177b21663654510646ba72ff7bc",
+      "image": {
+        "width": 429,
+        "height": 604,
+        "mode": "RGB"
+      }
+    },
+    {
+      "path": "references/logo-reference.png",
+      "bytes": 8669,
+      "sha256": "e4fd5b63461c90a61d3eb45c55df182fffd0907b4c3627b31a19a9e911d27916",
+      "image": {
+        "width": 175,
+        "height": 106,
+        "mode": "RGB"
+      }
+    },
+    {
+      "path": "references/map-reference.png",
+      "bytes": 18691,
+      "sha256": "f630c9ff3fbdc7a6973d9640c263f2e467d5fecbd6fe2341cb48d74dfd385375",
+      "image": {
+        "width": 491,
+        "height": 322,
+        "mode": "RGB"
+      }
+    },
+    {
+      "path": "references/vehicle-reference.png",
+      "bytes": 40020,
+      "sha256": "1a6f259656aa4c6a52c8198d6c8b423ccdb43de9df504af3c1f74340c31496c1",
+      "image": {
+        "width": 203,
+        "height": 400,
+        "mode": "RGB"
+      }
+    },
+    {
+      "path": "VERIFICATION.md",
+      "bytes": 2346,
+      "sha256": "7eaa0a1821870a0bc7f7e1bdfe553b6669ec5998ddbe51d317eca961a740e63b"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- assets/vehicle/car-steel.svg 변환. 블랙 차체 + 작은 실버 선 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp" android:height="112dp" android:viewportWidth="320" android:viewportHeight="112">
+    <path android:fillColor="#181818" android:pathData="M16,58 L61,45 L117,15 L221,46 L299,54 L304,80 L285,86 H34 L16,77 Z"/>
+    <path android:fillColor="#FFFFFF" android:pathData="M80,45 L121,24 L177,40 L199,47 Z"/>
+    <path android:strokeColor="#181818" android:strokeWidth="3" android:pathData="M130,27 L139,47"/>
+    <path android:strokeColor="#B9BEC3" android:strokeWidth="2" android:pathData="M24,63 H294"/>
+    <path android:fillColor="#FFFFFF" android:pathData="M47,82 a23,23 0 1,0 46,0 a23,23 0 1,0 -46,0"/>
+    <path android:fillColor="#181818" android:pathData="M51,82 a19,19 0 1,0 38,0 a19,19 0 1,0 -38,0"/>
+    <path android:fillColor="#FFFFFF" android:pathData="M233,82 a23,23 0 1,0 46,0 a23,23 0 1,0 -46,0"/>
+    <path android:fillColor="#181818" android:pathData="M237,82 a19,19 0 1,0 38,0 a19,19 0 1,0 -38,0"/>
+</vector>
