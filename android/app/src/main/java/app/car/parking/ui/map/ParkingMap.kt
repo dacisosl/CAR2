@@ -193,6 +193,9 @@ private fun NaverMapHost(
                     setLogoGravity(Gravity.BOTTOM or Gravity.START)
                     with(density) { setLogoMargin(12.dp.roundToPx(), 0, 0, 12.dp.roundToPx()) }
                 }
+                // 스타일 에디터 없이 한 번에 맞추는 차분한 지도: 전체를 밝고 옅게, 정보량을 줄인다.
+                // 발행한 커스텀 스타일이 있으면 그 스타일이 우선한다
+                if (BuildConfig.NAVER_MAP_STYLE_ID.isBlank()) applyCalmLook(naverMap)
                 if (BuildConfig.NAVER_MAP_STYLE_ID.isNotBlank()) {
                     naverMap.setCustomStyleId(
                         BuildConfig.NAVER_MAP_STYLE_ID,
@@ -215,6 +218,16 @@ private fun NaverMapHost(
         },
         modifier = Modifier.fillMaxSize(),
     )
+}
+
+/** 참조 지도처럼 밝고 단순하게. 지도 데이터·로고·저작권은 그대로 둔다 */
+private fun applyCalmLook(map: NaverMap) {
+    map.lightness = 0.35f
+    map.buildingHeight = 0f
+    map.symbolScale = 0.8f
+    map.setLayerGroupEnabled(NaverMap.LAYER_GROUP_TRANSIT, false)
+    map.setLayerGroupEnabled(NaverMap.LAYER_GROUP_BICYCLE, false)
+    map.setLayerGroupEnabled(NaverMap.LAYER_GROUP_MOUNTAIN, false)
 }
 
 @Composable
