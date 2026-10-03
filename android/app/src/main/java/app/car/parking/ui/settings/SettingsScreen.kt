@@ -49,7 +49,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.IntentCompat
-import app.car.parking.BuildConfig
 import app.car.parking.R
 import app.car.parking.data.bluetooth.BondedDevices
 import app.car.parking.data.location.Fix
@@ -59,6 +58,7 @@ import app.car.parking.platform.permissions.Readiness
 import app.car.parking.platform.permissions.SystemChecks
 import app.car.parking.platform.statusbar.StatusBarNotifier
 import app.car.parking.ui.SettingsDraft
+import app.car.parking.ui.UpdateState
 import app.car.parking.ui.components.IconTarget
 import app.car.parking.ui.theme.CarTheme
 import app.car.parking.ui.theme.CarType
@@ -81,6 +81,9 @@ fun SettingsScreen(
     onSave: (SettingsDraft) -> Unit,
     locateHere: suspend () -> Fix?,
     onRefresh: () -> Unit,
+    update: UpdateState,
+    onCheckUpdate: () -> Unit,
+    onInstallUpdate: () -> Unit,
 ) {
     val saved = remember(settings) { SettingsDraft.from(settings) }
     var draft by rememberSaveable(stateSaver = DraftSaver) { mutableStateOf(saved) }
@@ -303,12 +306,7 @@ fun SettingsScreen(
                         )
                     }
                 }
-                Text(
-                    "주차기록 ${BuildConfig.VERSION_NAME}" + if (BuildConfig.NAVER_MAP_KEY_ID.isBlank()) " · 지도 미연결" else "",
-                    style = CarType.label,
-                    color = t.inactive,
-                    modifier = Modifier.padding(top = 24.dp, bottom = 32.dp),
-                )
+                UpdateRow(update, onCheckUpdate, onInstallUpdate)
             }
         }
 

@@ -12,6 +12,7 @@ import kotlinx.coroutines.SupervisorJob
 import app.car.parking.data.storage.SettingsStore
 import app.car.parking.domain.parking.ParkingRepository
 import app.car.parking.platform.statusbar.StatusBarNotifier
+import app.car.parking.platform.update.AppUpdater
 import app.car.parking.platform.widget.ParkingWidgets
 import com.naver.maps.map.NaverMapSdk
 import kotlinx.coroutines.flow.combine
@@ -26,6 +27,7 @@ class AppContainer(context: Context) {
     val location = LocationRepository(context)
     val pressure = PressureSampler(context)
     val photos = PhotoStore(context)
+    val updater = AppUpdater(context)
 
     /** 화면 수명과 무관하게 끝나야 하는 짧은 작업(자동 표시 테스트 예약 등) */
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)

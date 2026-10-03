@@ -44,6 +44,7 @@ import app.car.parking.ui.drawer.FloorDrawer
 import app.car.parking.ui.home.HomeScreen
 import app.car.parking.ui.onboarding.OnboardingScreen
 import app.car.parking.ui.settings.SettingsScreen
+import app.car.parking.ui.settings.UpdateDialog
 import app.car.parking.ui.settings.rememberSystemActions
 import app.car.parking.ui.theme.CarTheme
 import kotlinx.coroutines.delay
@@ -62,6 +63,8 @@ fun CarRoot(viewModel: AppViewModel, onUnlockThen: (() -> Unit) -> Unit) {
     val checks by viewModel.checks.collectAsState()
     val readiness by viewModel.readiness.collectAsState()
     val locationSave by viewModel.locationSave.collectAsState()
+    val update by viewModel.update.collectAsState()
+    val updatePrompt by viewModel.updatePrompt.collectAsState()
 
     var screen by rememberSaveable { mutableStateOf(if (settings.onboardingCompleted) Screen.Home else Screen.Onboarding) }
     var settingsFocusReadiness by rememberSaveable { mutableStateOf(false) }
@@ -94,6 +97,9 @@ fun CarRoot(viewModel: AppViewModel, onUnlockThen: (() -> Unit) -> Unit) {
                 onSave = { viewModel.saveSettings(it) },
                 locateHere = viewModel::locateHere,
                 onRefresh = viewModel::refreshChecks,
+                update = update,
+                onCheckUpdate = { viewModel.checkForUpdate() },
+                onInstallUpdate = viewModel::downloadAndInstall,
             )
             Screen.Home -> {
                 val record = (recordState as? RecordState.Loaded)?.record
@@ -137,6 +143,9 @@ fun CarRoot(viewModel: AppViewModel, onUnlockThen: (() -> Unit) -> Unit) {
             }
         }
         viewingPhoto?.let { PhotoViewer(it) { viewingPhoto = null } }
+        if (updatePrompt && !drawer.open) {
+            UpdateDialog(update, onInstall = viewModel::downloadAndInstall, onDismiss = viewModel::dismissUpdatePrompt)
+        }
     }
 }
 

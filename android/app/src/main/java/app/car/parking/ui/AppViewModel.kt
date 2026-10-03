@@ -19,6 +19,8 @@ import app.car.parking.platform.permissions.AutoRecordState
 import app.car.parking.platform.permissions.Readiness
 import app.car.parking.platform.permissions.SystemChecks
 import app.car.parking.platform.statusbar.StatusBarNotifier
+import app.car.parking.platform.update.UpdateInfo
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -69,6 +71,17 @@ data class SettingsDraft(
     }
 }
 
+sealed interface UpdateState {
+    data object Idle : UpdateState
+    data object Checking : UpdateState
+    data object UpToDate : UpdateState
+    data class Available(val info: UpdateInfo) : UpdateState
+    data class Downloading(val info: UpdateInfo, val progress: Float) : UpdateState
+    /** 설치 화면을 열 수 있는 상태. 설치 허용이 없으면 먼저 설정으로 안내한다 */
+    data class Ready(val info: UpdateInfo, val file: File) : UpdateState
+    data class Failed(val message: String) : UpdateState
+}
+
 enum class LocationSaveStatus { Idle, Saving, Saved, Failed }
 
 /** 레코드가 아직 로드되지 않은 상태와 기록 없음 상태를 구분한다 */
@@ -105,6 +118,72 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val locationSave: StateFlow<LocationSaveStatus> = _locationSave.asStateFlow()
 
     private var drawerJob: Job? = null
+
+    private val _update = MutableStateFlow<UpdateState>(UpdateState.Idle)
+    val update: StateFlow<UpdateState> = _update.asStateFlow()
+
+    /** 앱을 열 때 자동으로 확인해 새 버전이 있으면 알려 준다(6시간에 한 번) */
+    private val _updatePrompt = MutableStateFlow(false)
+    val updatePrompt: StateFlow<Boolean> = _updatePrompt.asStateFlow()
+
+    init {
+        val prefs = app.getSharedPreferences("update", android.content.Context.MODE_PRIVATE)
+        val last = prefs.getLong("lastCheck", 0L)
+        if (System.currentTimeMillis() - last > AUTO_CHECK_INTERVAL_MS) {
+            viewModelScope.launch {
+                checkForUpdate(manual = false)
+                prefs.edit().putLong("lastCheck", System.currentTimeMillis()).apply()
+            }
+        }
+    }
+
+    fun checkForUpdate(manual: Boolean = true) {
+        if (_update.value is UpdateState.Checking || _update.value is UpdateState.Downloading) return
+        _update.value = UpdateState.Checking
+        viewModelScope.launch {
+            _update.value = runCatching { container.updater.checkLatest() }.fold(
+                onSuccess = { info -> if (info != null) UpdateState.Available(info) else UpdateState.UpToDate },
+                onFailure = { UpdateState.Failed("업데이트를 확인하지 못했어요. 인터넷 연결을 확인하세요") },
+            )
+            val result = _update.value
+            if (!manual) {
+                if (result is UpdateState.Available) _updatePrompt.value = true else _update.value = UpdateState.Idle
+            }
+        }
+    }
+
+    fun dismissUpdatePrompt() {
+        _updatePrompt.value = false
+    }
+
+    /** 내려받고(SHA-256·패키지 확인) 바로 설치 화면을 연다 */
+    fun downloadAndInstall() {
+        val info = when (val s = _update.value) {
+            is UpdateState.Available -> s.info
+            is UpdateState.Ready -> return installReady()
+            is UpdateState.Failed -> return
+            else -> return
+        }
+        _update.value = UpdateState.Downloading(info, 0f)
+        viewModelScope.launch {
+            _update.value = runCatching {
+                container.updater.download(info) { p -> _update.value = UpdateState.Downloading(info, p) }
+            }.fold(
+                onSuccess = { UpdateState.Ready(info, it) },
+                onFailure = { UpdateState.Failed(it.message ?: "내려받지 못했어요") },
+            )
+            installReady()
+        }
+    }
+
+    private fun installReady() {
+        val ready = _update.value as? UpdateState.Ready ?: return
+        if (!container.updater.canInstall()) {
+            container.updater.openInstallPermissionSettings()
+            return
+        }
+        runCatching { container.updater.install(ready.file) }
+    }
 
     fun refreshChecks() {
         _checks.value = SystemChecks.read(app, container.pressure.hasBarometer)
@@ -294,6 +373,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun completeOnboarding() = viewModelScope.launch { container.settings.setOnboardingCompleted() }
 
     companion object {
+        private const val AUTO_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000L
         private const val LOCATION_ATTACH_WINDOW_MS = 3 * 60 * 1000L
     }
 }

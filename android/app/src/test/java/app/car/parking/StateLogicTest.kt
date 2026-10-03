@@ -9,6 +9,7 @@ import app.car.parking.platform.permissions.AutoRecordState
 import app.car.parking.platform.permissions.Readiness
 import app.car.parking.platform.permissions.SystemChecks
 import app.car.parking.ui.home.elapsedText
+import app.car.parking.platform.update.AppUpdater
 import app.car.parking.ui.theme.ElapsedTone
 import app.car.parking.domain.parking.ParkingRepository
 import org.junit.Assert.assertEquals
@@ -121,5 +122,16 @@ class ElapsedTextTest {
         assertEquals("13분", elapsedText(13 * 60_000L))
         assertEquals("2시간 13분", elapsedText((2 * 60 + 13) * 60_000L))
         assertEquals("1일 3시간", elapsedText((27 * 60 + 5) * 60_000L))
+    }
+}
+
+class UpdateVersionTest {
+    @Test
+    fun comparesVersions() {
+        assertTrue(AppUpdater.isNewer("0.3.1", "0.3.0"))
+        assertTrue(AppUpdater.isNewer("0.10.0", "0.9.9"))
+        assertTrue(AppUpdater.isNewer("1.0", "0.9.9"))
+        assertEquals(false, AppUpdater.isNewer("0.3.1", "0.3.1"))
+        assertEquals(false, AppUpdater.isNewer("0.3.0", "0.3.1"))
     }
 }
