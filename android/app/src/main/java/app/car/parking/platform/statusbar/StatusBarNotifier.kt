@@ -27,7 +27,7 @@ import app.car.parking.domain.floor.Floors
 /**
  * 상태바 층 표지판. CARwhere v5.9의 StatusBarNotifier를 이 앱에 맞게 옮겼다.
  *
- *  - 상태바에 [B2] 같은 층 표지판 아이콘(글자를 뚫어낸 표지판)을 띄운다.
+ *  - 상태바에 [B2] 같은 층 표지판 아이콘을 띄운다. 색 규칙은 [FloorSign](위젯과 같음).
  *  - 알림창에는 층·경과 시간을 표시한다. 탭하면 홈이 열린다(자동 표시 진입 경로와는 별개).
  *  - Android 16: Live Updates 승격을 요청해 상태바 칩·잠금화면에 표시한다.
  *  - 일반 상시 알림이라 서비스가 종료돼도 남는다. 재부팅·업데이트 후에는 BootReceiver가 다시 게시한다.
@@ -39,30 +39,6 @@ object StatusBarNotifier {
 
     // 채널 중요도는 만든 뒤 앱에서 바꿀 수 없다. 바꾸려면 id를 올리고 이전 채널을 지운다.
     private const val CHANNEL_ID = "parked_floor_v1"
-
-    /** 층을 모를 때(P) 표지판 색 */
-    const val UNKNOWN_ARGB: Int = 0xFF2F6B4F.toInt()
-
-    // 어두운 상태바에서 색만 보고도 층을 구분하도록 명도가 아니라 색상으로 나눈다
-    private val BASEMENT = intArrayOf(
-        0xFFC6FF00.toInt(), // B1 라임
-        0xFF76FF03.toInt(), // B2 연두
-        0xFF00E676.toInt(), // B3 초록
-        0xFF00E5FF.toInt(), // B4 시안
-    )
-    private val GROUND = intArrayOf(
-        0xFFFFD54F.toInt(), // 1F 앰버
-        0xFFFFAB40.toInt(), // 2F 오렌지
-        0xFFFF7043.toInt(), // 3F 진한 주황
-        0xFFFF5252.toInt(), // 4F 코랄
-    )
-
-    fun floorColor(floor: String?): Int {
-        if (floor.isNullOrBlank()) return UNKNOWN_ARGB
-        val number = floor.filter { it.isDigit() }.toIntOrNull() ?: return UNKNOWN_ARGB
-        val tones = if (floor.startsWith("B")) BASEMENT else GROUND
-        return tones[(number - 1).coerceIn(0, tones.size - 1)]
-    }
 
     fun createChannel(context: Context) {
         val nm = context.getSystemService(NotificationManager::class.java)
@@ -117,15 +93,15 @@ object StatusBarNotifier {
         startedAtMs: Long,
         contentIntent: PendingIntent,
     ): Notification {
-        val tone = floorColor(floor)
-        val icon = IconCompat.createWithBitmap(renderSignIcon(floor ?: "P", tone))
+        val sign = FloorSign.of(floor)
+        val icon = IconCompat.createWithBitmap(renderSignIcon(floor ?: "P", sign))
         return NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(icon)
             .setContentIntent(contentIntent)
             .setContentTitle(if (floor != null) "$floor 에 주차됨" else "주차 위치 저장됨")
             .setContentText(detail)
             .setStyle(NotificationCompat.BigTextStyle().bigText(detail))
-            .setColor(tone)
+            .setColor(sign.accent)
             .setOngoing(true)
             .setShowWhen(startedAtMs > 0L)
             .setWhen(if (startedAtMs > 0L) startedAtMs else System.currentTimeMillis())
@@ -156,10 +132,11 @@ object StatusBarNotifier {
     }
 
     /**
-     * 둥근 사각 표지판 + 글자를 투명하게 뚫어낸 비트맵.
-     * 순정 Android는 알파 실루엣만 단색으로 그리고 일부 제조사는 색을 보존한다. 양쪽 모두 글자가 읽힌다.
+     * 둥근 사각 표지판 위에 색 글자를 그린다. 글자 둘레는 투명하게 한 줄 비운다.
+     * 삼성 등 색을 보존하는 기기에서는 표지판·글자 색이 그대로 보이고, 순정 Android처럼
+     * 아이콘을 한 가지 색 실루엣으로 바꾸는 기기에서도 비운 테두리 덕분에 글자 모양이 읽힌다.
      */
-    fun renderSignIcon(text: String, tint: Int = UNKNOWN_ARGB): Bitmap {
+    fun renderSignIcon(text: String, sign: FloorSign): Bitmap {
         val size = 144
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
@@ -167,22 +144,34 @@ object StatusBarNotifier {
         val top = inset
         val bottom = size - inset
         val corner = (bottom - top) * 0.22f
-        canvas.drawRoundRect(0f, top, size.toFloat(), bottom, corner, corner, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = tint })
+        val edge = 5f
+        val rect = android.graphics.RectF(0f, top, size.toFloat(), bottom)
+        canvas.drawRoundRect(rect, corner, corner, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = sign.edge })
+        rect.inset(edge, edge)
+        canvas.drawRoundRect(rect, corner - edge, corner - edge, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = sign.plate })
 
-        val punch = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        val glyph = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             typeface = Typeface.create("sans-serif-black", Typeface.NORMAL)
             textAlign = Paint.Align.CENTER
-            xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR)
         }
         val bounds = Rect()
-        punch.textSize = 100f
-        punch.getTextBounds(text, 0, text.length, bounds)
+        glyph.textSize = 100f
+        glyph.getTextBounds(text, 0, text.length, bounds)
         if (bounds.width() > 0 && bounds.height() > 0) {
-            punch.textSize = 100f * minOf((bottom - top) * 0.74f / bounds.height(), size * 0.84f / bounds.width())
-            punch.getTextBounds(text, 0, text.length, bounds)
+            glyph.textSize = 100f * minOf((bottom - top) * 0.62f / bounds.height(), size * 0.72f / bounds.width())
+            glyph.getTextBounds(text, 0, text.length, bounds)
         }
         val baseline = (top + bottom) / 2f - (bounds.top + bounds.bottom) / 2f
-        canvas.drawText(text, size / 2f, baseline, punch)
+        // 1) 글자 둘레를 투명하게 비운다
+        val gap = Paint(glyph).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = 8f
+            strokeJoin = Paint.Join.ROUND
+            xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR)
+        }
+        canvas.drawText(text, size / 2f, baseline, gap)
+        // 2) 글자를 색으로 채운다
+        canvas.drawText(text, size / 2f, baseline, Paint(glyph).apply { color = sign.text })
         return bitmap
     }
 }

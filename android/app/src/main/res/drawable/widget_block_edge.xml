@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 층 표지판 가장자리(실버). 흰 바탕 표지판도 위젯 바탕과 구분된다 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@android:color/transparent" />
+    <stroke android:width="1.5dp" android:color="#FFB9BEC3" />
+    <corners android:radius="12dp" />
+</shape>

@@ -16,6 +16,7 @@ import app.car.parking.R
 import app.car.parking.data.storage.LocationSource
 import app.car.parking.data.storage.ParkingRecordEntity
 import app.car.parking.domain.floor.Floors
+import app.car.parking.platform.statusbar.FloorSign
 import app.car.parking.ui.home.elapsedText
 import app.car.parking.ui.theme.CarTokens
 import app.car.parking.ui.theme.ElapsedTone
@@ -80,13 +81,15 @@ object ParkingWidgets {
 
         views.setInt(R.id.widget_bg, "setColorFilter", t.white.toArgb())
         views.setTextViewText(R.id.widget_floor, floor)
+        // 층 표지판: 상태바 아이콘과 같은 색 규칙
+        val sign = FloorSign.of(record?.floorLevel)
+        views.setInt(R.id.widget_block, "setColorFilter", sign.plate)
+        views.setTextColor(R.id.widget_floor, sign.text)
         views.setTextViewText(R.id.widget_elapsed, elapsed)
         views.setTextColor(R.id.widget_elapsed, elapsedColor.toArgb())
         if (layout == R.layout.widget_1x1) {
-            views.setTextColor(R.id.widget_floor, t.primary.toArgb())
             views.setContentDescription(R.id.widget_root, "주차 층수 $floor, 주차한 지 $elapsed")
         } else {
-            views.setInt(R.id.widget_block, "setColorFilter", t.primary.toArgb())
             val location = record?.let(::locationLine) ?: "층수를 기록하면 표시돼요"
             views.setTextViewText(R.id.widget_location, location)
             views.setTextColor(R.id.widget_location, t.textSecondary.toArgb())

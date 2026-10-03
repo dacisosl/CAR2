@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 1×1: 층수 + 주차 경과 시간 -->
+<!-- 1×1: 층 표지판 + 주차 경과 시간 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
@@ -21,23 +21,45 @@
         android:orientation="vertical"
         android:padding="6dp">
 
-        <TextView
-            android:id="@+id/widget_floor"
+        <FrameLayout
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_weight="1"
-            android:autoSizeMaxTextSize="40sp"
-            android:autoSizeMinTextSize="14sp"
-            android:autoSizeTextType="uniform"
-            android:fontFamily="sans-serif-black"
-            android:gravity="center"
-            android:maxLines="1"
-            android:text="—" />
+            android:layout_weight="1">
+
+            <ImageView
+                android:id="@+id/widget_block"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="fitXY"
+                android:src="@drawable/widget_block"
+                android:importantForAccessibility="no" />
+
+            <ImageView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="fitXY"
+                android:src="@drawable/widget_block_edge"
+                android:importantForAccessibility="no" />
+
+            <TextView
+                android:id="@+id/widget_floor"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:autoSizeMaxTextSize="36sp"
+                android:autoSizeMinTextSize="12sp"
+                android:autoSizeTextType="uniform"
+                android:fontFamily="sans-serif-black"
+                android:gravity="center"
+                android:maxLines="1"
+                android:padding="4dp"
+                android:text="—" />
+        </FrameLayout>
 
         <TextView
             android:id="@+id/widget_elapsed"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="3dp"
             android:autoSizeMaxTextSize="13sp"
             android:autoSizeMinTextSize="8sp"
             android:autoSizeTextType="uniform"

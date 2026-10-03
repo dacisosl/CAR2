@@ -135,3 +135,27 @@ class UpdateVersionTest {
         assertEquals(false, AppUpdater.isNewer("0.3.0", "0.3.1"))
     }
 }
+
+class FloorSignTest {
+    private fun sign(label: String) = app.car.parking.platform.statusbar.FloorSign.of(label)
+    private val B = app.car.parking.platform.statusbar.FloorSign.BLACK
+    private val W = app.car.parking.platform.statusbar.FloorSign.WHITE
+
+    @Test
+    fun aboveGroundBlackPlateCyclesWhiteGreenSilver() {
+        listOf("1F", "2F", "3F", "4F").forEach { assertEquals(B, sign(it).plate) }
+        assertEquals(W, sign("1F").text)
+        assertEquals(app.car.parking.platform.statusbar.FloorSign.GREEN_ON_BLACK, sign("2F").text)
+        assertEquals(app.car.parking.platform.statusbar.FloorSign.SILVER_ON_BLACK, sign("3F").text)
+        assertEquals(W, sign("4F").text)
+    }
+
+    @Test
+    fun basementWhitePlateCyclesBlackGreenSilver() {
+        listOf("B1", "B2", "B3", "B4").forEach { assertEquals(W, sign(it).plate) }
+        assertEquals(B, sign("B1").text)
+        assertEquals(app.car.parking.platform.statusbar.FloorSign.GREEN_ON_WHITE, sign("B2").text)
+        assertEquals(app.car.parking.platform.statusbar.FloorSign.SILVER_ON_WHITE, sign("B3").text)
+        assertEquals(B, sign("B4").text)
+    }
+}

@@ -22,8 +22,8 @@ android {
         applicationId = "app.car.parking"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "0.3.3"
+        versionCode = 7
+        versionName = "0.3.4"
 
         val naverKey = secret("NAVER_MAP_KEY_ID")
         buildConfigField("String", "NAVER_MAP_KEY_ID", "\"$naverKey\"")

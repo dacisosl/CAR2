@@ -34,6 +34,13 @@
                 android:src="@drawable/widget_block"
                 android:importantForAccessibility="no" />
 
+            <ImageView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="fitXY"
+                android:src="@drawable/widget_block_edge"
+                android:importantForAccessibility="no" />
+
             <TextView
                 android:id="@+id/widget_floor"
                 android:layout_width="match_parent"
@@ -45,8 +52,7 @@
                 android:gravity="center"
                 android:maxLines="1"
                 android:padding="4dp"
-                android:text="—"
-                android:textColor="#FFFFFFFF" />
+                android:text="—" />
         </FrameLayout>
 
         <LinearLayout
