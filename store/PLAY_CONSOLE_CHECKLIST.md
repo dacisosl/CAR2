@@ -51,7 +51,7 @@ keyPassword=입력한_비밀번호
 
 | 항목 | 준비 자료 |
 |---|---|
-| 개인정보처리방침 | `docs/PRIVACY_POLICY.md`(GitHub 주소). 연락처 이메일을 채운 뒤 커밋 |
+| 개인정보처리방침 | `docs/PRIVACY_POLICY.md`(GitHub 주소). 문의 이메일 입력됨 |
 | 데이터 보안 | `store/DATA_SAFETY.md` |
 | 광고 | 없음 |
 | 콘텐츠 등급 | 유틸리티, 해당 항목 모두 없음 → 전체이용가 예상 |
