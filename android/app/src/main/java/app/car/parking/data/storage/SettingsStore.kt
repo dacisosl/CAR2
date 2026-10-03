@@ -3,6 +3,7 @@ package app.car.parking.data.storage
 import android.content.Context
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
@@ -44,13 +45,13 @@ data class AppSettings(
     val drawerSide: DrawerSide = DrawerSide.Left,
     val appTheme: AppThemeId = AppThemeId.Graphite,
     val onboardingCompleted: Boolean = false,
-    val statusBarEnabled: Boolean = true,
     val reconnectCheckMs: Long = DEFAULT_RECONNECT_MS,
-    val autoLaunchTestPassedAt: Long = 0L,
-    val autoLaunchTestDevice: String? = null,
-    val autoLaunchTestStartedAt: Long = 0L,
     val lastConnectedAt: Long = 0L,
+    val homeLatitude: Double? = null,
+    val homeLongitude: Double? = null,
 ) {
+    val hasHome: Boolean get() = homeLatitude != null && homeLongitude != null
+
     companion object {
         /** 실기기 테스트 전까지의 초안 값 */
         const val DEFAULT_RECONNECT_MS = 6_000L
@@ -64,16 +65,13 @@ class SettingsStore(private val context: Context) {
         val schema = intPreferencesKey("schemaVersion")
         val vehicleAddress = stringPreferencesKey("registeredVehicleId")
         val vehicleName = stringPreferencesKey("registeredVehicleName")
-        val autoRecord = booleanPreferencesKey("autoRecordRequested")
         val drawerSide = stringPreferencesKey("drawerSide")
         val appTheme = stringPreferencesKey("appTheme")
         val onboarding = booleanPreferencesKey("onboardingCompleted")
-        val statusBar = booleanPreferencesKey("statusBarEnabled")
         val reconnectMs = longPreferencesKey("reconnectCheckMs")
-        val testPassedAt = longPreferencesKey("autoLaunchTestPassedAt")
-        val testDevice = stringPreferencesKey("autoLaunchTestDevice")
-        val testStartedAt = longPreferencesKey("autoLaunchTestStartedAt")
         val lastConnectedAt = longPreferencesKey("lastConnectedAt")
+        val homeLat = doublePreferencesKey("homeLatitude")
+        val homeLng = doublePreferencesKey("homeLongitude")
     }
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { it.toSettings() }
@@ -84,16 +82,15 @@ class SettingsStore(private val context: Context) {
         schemaVersion = this[Keys.schema] ?: 1,
         registeredVehicleAddress = this[Keys.vehicleAddress],
         registeredVehicleName = this[Keys.vehicleName],
-        autoRecordRequested = this[Keys.autoRecord] ?: true,
+        // 자동 기록은 항상 켜짐(설정 스위치 없음). 이전 버전에서 끈 값도 다시 켠다
+        autoRecordRequested = true,
         drawerSide = DrawerSide.from(this[Keys.drawerSide]),
         appTheme = AppThemeId.from(this[Keys.appTheme]),
         onboardingCompleted = this[Keys.onboarding] ?: false,
-        statusBarEnabled = this[Keys.statusBar] ?: true,
         reconnectCheckMs = this[Keys.reconnectMs] ?: AppSettings.DEFAULT_RECONNECT_MS,
-        autoLaunchTestPassedAt = this[Keys.testPassedAt] ?: 0L,
-        autoLaunchTestDevice = this[Keys.testDevice],
-        autoLaunchTestStartedAt = this[Keys.testStartedAt] ?: 0L,
         lastConnectedAt = this[Keys.lastConnectedAt] ?: 0L,
+        homeLatitude = this[Keys.homeLat],
+        homeLongitude = this[Keys.homeLng],
     )
 
     suspend fun setTheme(theme: AppThemeId) {
@@ -102,14 +99,6 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setDrawerSide(side: DrawerSide) {
         context.dataStore.edit { it[Keys.drawerSide] = side.key }
-    }
-
-    suspend fun setAutoRecord(enabled: Boolean) {
-        context.dataStore.edit { it[Keys.autoRecord] = enabled }
-    }
-
-    suspend fun setStatusBar(enabled: Boolean) {
-        context.dataStore.edit { it[Keys.statusBar] = enabled }
     }
 
     suspend fun setOnboardingCompleted() {
@@ -123,9 +112,7 @@ class SettingsStore(private val context: Context) {
     suspend fun setVehicle(address: String, name: String?) {
         context.dataStore.edit {
             if (it[Keys.vehicleAddress] != address) {
-                // 다른 차량으로 바꾸면 이전 차량 기준의 테스트 결과·연결 세션을 쓰지 않는다
-                it.remove(Keys.testPassedAt)
-                it.remove(Keys.testDevice)
+                // 다른 차량으로 바꾸면 이전 차량의 연결 세션을 쓰지 않는다
                 it.remove(Keys.lastConnectedAt)
             }
             it[Keys.vehicleAddress] = address
@@ -133,19 +120,17 @@ class SettingsStore(private val context: Context) {
         }
     }
 
-    suspend fun markAutoLaunchTestStarted(time: Long) {
-        context.dataStore.edit { it[Keys.testStartedAt] = time }
-    }
-
-    suspend fun markAutoLaunchTestPassed(time: Long, device: String) {
+    suspend fun setHome(latitude: Double, longitude: Double) {
         context.dataStore.edit {
-            it[Keys.testPassedAt] = time
-            it[Keys.testDevice] = device
-            it[Keys.testStartedAt] = 0L
+            it[Keys.homeLat] = latitude
+            it[Keys.homeLng] = longitude
         }
     }
 
-    suspend fun clearAutoLaunchTestStarted() {
-        context.dataStore.edit { it[Keys.testStartedAt] = 0L }
+    suspend fun clearHome() {
+        context.dataStore.edit {
+            it.remove(Keys.homeLat)
+            it.remove(Keys.homeLng)
+        }
     }
 }

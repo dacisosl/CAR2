@@ -41,7 +41,6 @@ import app.car.parking.R
 import app.car.parking.data.bluetooth.PairedDevice
 import app.car.parking.data.storage.AppThemeId
 import app.car.parking.data.storage.DrawerSide
-import app.car.parking.ui.LaunchTestStatus
 import app.car.parking.ui.theme.CarTheme
 import app.car.parking.ui.theme.CarTokens
 import app.car.parking.ui.theme.CarType
@@ -158,65 +157,15 @@ private fun RadioMark(selected: Boolean) {
 }
 
 @Composable
-fun SideChooser(side: DrawerSide, onSelect: (DrawerSide) -> Unit) {
-    val t = LocalCarTokens.current
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(t.buttonShape)
-            .background(t.surface)
-            .padding(4.dp),
-    ) {
-        listOf(DrawerSide.Left to "왼쪽", DrawerSide.Right to "오른쪽").forEach { (value, label) ->
-            val selected = side == value
-            Box(
-                Modifier
-                    .weight(1f)
-                    .heightIn(min = 48.dp)
-                    .clip(t.buttonShape)
-                    .let { if (selected) it.primarySurface(t, t.buttonShape) else it.background(t.surface) }
-                    .selectable(selected = selected, role = Role.RadioButton) { onSelect(value) }
-                    .semantics { contentDescription = "사이드바 $label" },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(label, style = CarType.body.copy(fontWeight = FontWeight.Bold), color = if (selected) t.onPrimary else t.black)
-            }
-        }
-    }
-}
-
-@Composable
-fun SwitchRow(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit, enabled: Boolean = true) {
-    val t = LocalCarTokens.current
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .heightIn(min = 56.dp)
-            .toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onChange),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-            Text(title, style = CarType.body.copy(fontWeight = FontWeight.Bold), color = t.black)
-            Text(subtitle, style = CarType.secondary, color = t.textSecondary)
-        }
-        Switch(
-            checked = checked,
-            onCheckedChange = null,
-            enabled = enabled,
-            colors = SwitchDefaults.colors(
-                checkedTrackColor = t.primary,
-                checkedThumbColor = t.white,
-                uncheckedTrackColor = t.border,
-                uncheckedThumbColor = t.white,
-                uncheckedBorderColor = t.border,
-            ),
-        )
-    }
-}
-
-/** 실제 상태 + 이유 + 이동 버튼 */
-@Composable
-fun CheckRow(title: String, reason: String, done: Boolean, action: String?, onAction: (() -> Unit)?, required: Boolean = true) {
+fun CheckRow(
+    title: String,
+    reason: String,
+    done: Boolean,
+    action: String?,
+    onAction: (() -> Unit)?,
+    required: Boolean = true,
+    showActionWhenDone: Boolean = false,
+) {
     val t = LocalCarTokens.current
     Row(
         Modifier
@@ -244,7 +193,7 @@ fun CheckRow(title: String, reason: String, done: Boolean, action: String?, onAc
             )
             Text(if (done) "완료 · $reason" else reason, style = CarType.secondary, color = t.textSecondary)
         }
-        if (!done && action != null && onAction != null) {
+        if ((!done || showActionWhenDone) && action != null && onAction != null) {
             Box(
                 Modifier
                     .heightIn(min = 48.dp)
@@ -311,57 +260,6 @@ fun VehicleList(
                     if (selected) Icon(painterResource(R.drawable.ic_check), "선택됨", tint = t.onPrimary)
                 }
             }
-        }
-    }
-}
-
-@Composable
-fun LaunchTestPanel(status: LaunchTestStatus, passedInfo: String?, overlayAllowed: Boolean, onStart: () -> Unit) {
-    val t = LocalCarTokens.current
-    val message = when (status) {
-        LaunchTestStatus.Waiting -> "지금 홈 화면으로 나가세요. 8초 뒤 앱이 자동으로 나타나야 해요."
-        LaunchTestStatus.Passed -> "통과 · 알림을 누르지 않고 앱이 자동으로 표시됐어요."
-        LaunchTestStatus.NotInBackground -> "앱이 화면에 떠 있어서 확인하지 못했어요. 시작 후 홈 화면으로 나가세요."
-        LaunchTestStatus.Failed -> "앱이 자동으로 표시되지 않았어요. ‘다른 앱 위에 표시’와 제조사 실행 제한을 확인하세요."
-        LaunchTestStatus.Idle -> passedInfo?.let { "통과 기록 · $it" }
-            ?: "시작을 누른 뒤 홈 화면으로 나가면, 차에서 내렸을 때와 같은 방식으로 앱이 떠오르는지 확인해요."
-    }
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(t.cardShape)
-            .background(t.surface)
-            .padding(16.dp),
-    ) {
-        Text("자동 표시 테스트", style = CarType.body.copy(fontWeight = FontWeight.Bold), color = t.black)
-        Spacer(Modifier.height(4.dp))
-        Text(message, style = CarType.secondary, color = t.textSecondary)
-        Text(
-            "실제 차량 Bluetooth 해제 감지는 차에서 따로 확인해야 해요.",
-            style = CarType.label,
-            color = t.textSecondary,
-            modifier = Modifier.padding(top = 4.dp),
-        )
-        Spacer(Modifier.height(12.dp))
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .heightIn(min = 48.dp)
-                .clip(t.buttonShape)
-                .primarySurface(t, t.buttonShape, enabled = overlayAllowed)
-                .clickable(enabled = overlayAllowed && status != LaunchTestStatus.Waiting, role = Role.Button, onClick = onStart),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                when {
-                    !overlayAllowed -> "‘다른 앱 위에 표시’를 먼저 허용하세요"
-                    status == LaunchTestStatus.Waiting -> "대기 중"
-                    else -> "테스트 시작"
-                },
-                style = CarType.body.copy(fontWeight = FontWeight.Bold),
-                color = if (overlayAllowed) t.onPrimary else t.inactive,
-                textAlign = TextAlign.Center,
-            )
         }
     }
 }

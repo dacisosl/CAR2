@@ -1,12 +1,10 @@
 package app.car.parking.ui
 
 import android.app.Application
-import android.os.Build
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.viewModelScope
 import app.car.parking.CarApp
+import app.car.parking.data.location.Fix
 import app.car.parking.data.storage.AppSettings
 import app.car.parking.data.storage.AppThemeId
 import app.car.parking.data.storage.CandidateEntity
@@ -15,6 +13,7 @@ import app.car.parking.data.storage.DrawerSide
 import app.car.parking.data.storage.ParkingRecordEntity
 import app.car.parking.domain.floor.FloorRecommendation
 import app.car.parking.domain.parking.DrawerTarget
+import app.car.parking.domain.parking.ParkingRepository
 import app.car.parking.platform.autolaunch.AutoLauncher
 import app.car.parking.platform.permissions.AutoRecordState
 import app.car.parking.platform.permissions.Readiness
@@ -42,14 +41,35 @@ data class DrawerUiState(
     val userTouched: Boolean = false,
     val recommendation: FloorRecommendation? = null,
     val recommendationPending: Boolean = false,
-    val pendingPhotoPath: String? = null,
-    val existingPhotoPath: String? = null,
+    /** 이 기록을 상태바에 표시할지. 집 근처면 기본 켜짐, 그 외 기본 꺼짐 */
+    val statusBarOn: Boolean = false,
+    /** 사용자가 스위치를 만졌으면 위치가 늦게 확인돼도 기본값으로 바꾸지 않는다 */
+    val statusBarTouched: Boolean = false,
     val saving: Boolean = false,
     /** 자동 진입으로 열린 패널 */
     val autoEntry: Boolean = false,
 )
 
-enum class LaunchTestStatus { Idle, Waiting, Passed, NotInBackground, Failed }
+/** 설정 화면에서 고친 뒤 저장 버튼으로 확정하는 값 */
+data class SettingsDraft(
+    val theme: AppThemeId,
+    val vehicleAddress: String?,
+    val vehicleName: String?,
+    val homeLatitude: Double?,
+    val homeLongitude: Double?,
+) {
+    companion object {
+        fun from(s: AppSettings) = SettingsDraft(
+            theme = s.appTheme,
+            vehicleAddress = s.registeredVehicleAddress,
+            vehicleName = s.registeredVehicleName,
+            homeLatitude = s.homeLatitude,
+            homeLongitude = s.homeLongitude,
+        )
+    }
+}
+
+enum class LocationSaveStatus { Idle, Saving, Saved, Failed }
 
 /** 레코드가 아직 로드되지 않은 상태와 기록 없음 상태를 구분한다 */
 sealed interface RecordState {
@@ -81,49 +101,36 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _drawer = MutableStateFlow(DrawerUiState())
     val drawer: StateFlow<DrawerUiState> = _drawer.asStateFlow()
 
-    private val _launchTest = MutableStateFlow(LaunchTestStatus.Idle)
-    val launchTest: StateFlow<LaunchTestStatus> = _launchTest.asStateFlow()
+    private val _locationSave = MutableStateFlow(LocationSaveStatus.Idle)
+    val locationSave: StateFlow<LocationSaveStatus> = _locationSave.asStateFlow()
 
-    private var recommendationJob: Job? = null
+    private var drawerJob: Job? = null
 
     fun refreshChecks() {
         _checks.value = SystemChecks.read(app, container.pressure.hasBarometer)
-        viewModelScope.launch { detectLaunchTestFailure() }
     }
 
     // ── 자동 진입 ──────────────────────────────────────────────
 
-    fun handleEntry(candidateId: String?, openPanel: Boolean, autoEntry: Boolean, launchTest: Boolean, wasBackground: Boolean) {
-        viewModelScope.launch {
-            if (launchTest) {
-                if (wasBackground) {
-                    val device = "${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE}"
-                    container.settings.markAutoLaunchTestPassed(System.currentTimeMillis(), device)
-                    _launchTest.value = LaunchTestStatus.Passed
-                } else {
-                    _launchTest.value = LaunchTestStatus.NotInBackground
-                    container.settings.clearAutoLaunchTestStarted()
-                }
-                return@launch
-            }
-            if (candidateId != null && openPanel) openCandidate(candidateId, autoEntry)
-        }
+    fun handleEntry(candidateId: String?, openPanel: Boolean, autoEntry: Boolean) {
+        if (candidateId == null || !openPanel) return
+        viewModelScope.launch { openCandidate(candidateId, autoEntry) }
     }
 
     private suspend fun openCandidate(candidateId: String, autoEntry: Boolean) {
         val candidate = container.parking.candidate(candidateId) ?: return
         if (candidate.status != CandidateStatus.READY) return
         AutoLauncher.cancelFallback(app)
-        cleanupPendingPhoto()
         _drawer.value = DrawerUiState(
             open = true,
             target = DrawerTarget.Candidate(candidateId),
             recommendationPending = true,
+            statusBarOn = nearHome(candidate.latitude, candidate.longitude),
             autoEntry = autoEntry,
         )
         // 추천 계산이 늦어도 패널은 먼저 연다
-        recommendationJob?.cancel()
-        recommendationJob = viewModelScope.launch {
+        drawerJob?.cancel()
+        drawerJob = viewModelScope.launch {
             var current: CandidateEntity = candidate
             applyRecommendation(container.parking.recommendationFor(current, container.pressure.hasBarometer))
             val ageMs = System.currentTimeMillis() - current.detectedAt
@@ -131,6 +138,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 container.location.currentFix()?.let { fix ->
                     container.parking.attachLocation(candidateId, fix)
                     current = container.parking.candidate(candidateId) ?: current
+                    applyHomeDefault(current.latitude, current.longitude)
                     applyRecommendation(container.parking.recommendationFor(current, container.pressure.hasBarometer))
                 }
             }
@@ -149,6 +157,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun nearHome(lat: Double?, lng: Double?): Boolean {
+        val s = settings.value ?: return false
+        return ParkingRepository.isNearHome(s.homeLatitude, s.homeLongitude, lat, lng)
+    }
+
+    private fun applyHomeDefault(lat: Double?, lng: Double?) {
+        _drawer.update { if (it.open && !it.statusBarTouched) it.copy(statusBarOn = nearHome(lat, lng)) else it }
+    }
+
     // ── 패널 ──────────────────────────────────────────────────
 
     fun openFromFloorCard() {
@@ -158,17 +175,23 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 openCandidate(candidate.id, autoEntry = false)
                 return@launch
             }
-            cleanupPendingPhoto()
+            drawerJob?.cancel()
             val existing = (record.value as? RecordState.Loaded)?.record
-            _drawer.value = if (existing != null) {
-                DrawerUiState(
+            if (existing != null) {
+                _drawer.value = DrawerUiState(
                     open = true,
                     target = DrawerTarget.Edit(existing.id),
                     selectedLevel = existing.floorLevel,
-                    existingPhotoPath = existing.photoPath,
+                    // 기존 기록은 이전에 고른 상태바 선택을 그대로 보여준다
+                    statusBarOn = existing.statusBarShown,
+                    statusBarTouched = true,
                 )
             } else {
-                DrawerUiState(open = true, target = DrawerTarget.Manual)
+                _drawer.value = DrawerUiState(open = true, target = DrawerTarget.Manual)
+                // 직접 기록은 지금 위치로 집 근처인지 판단한다
+                drawerJob = viewModelScope.launch {
+                    container.location.currentFix(5_000L)?.let { applyHomeDefault(it.latitude, it.longitude) }
+                }
             }
         }
     }
@@ -177,103 +200,100 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _drawer.update { it.copy(selectedLevel = level, userTouched = true) }
     }
 
-    fun setPendingPhoto(path: String) {
-        val previous = _drawer.value.pendingPhotoPath
-        if (previous != null && previous != path) container.photos.delete(previous)
-        _drawer.update { it.copy(pendingPhotoPath = path) }
+    fun setDrawerStatusBar(on: Boolean) {
+        _drawer.update { it.copy(statusBarOn = on, statusBarTouched = true) }
     }
 
     /** 닫기: 후보를 확정하지 않고 기존 확정 기록을 유지한다 */
     fun closeDrawer() {
-        recommendationJob?.cancel()
-        cleanupPendingPhoto()
+        drawerJob?.cancel()
         _drawer.update { DrawerUiState() }
     }
 
-    private fun cleanupPendingPhoto() {
-        _drawer.value.pendingPhotoPath?.let { container.photos.delete(it) }
-    }
-
-    fun save(onSaved: () -> Unit = {}) {
+    fun save() {
         val state = _drawer.value
         val level = state.selectedLevel ?: return
         if (state.saving) return
         _drawer.update { it.copy(saving = true) }
+        drawerJob?.cancel()
         viewModelScope.launch {
             val manualFix = if (state.target == DrawerTarget.Manual) container.location.currentFix(5_000L) else null
-            val previous = (record.value as? RecordState.Loaded)?.record
             val saved = container.parking.confirm(
                 target = state.target,
                 floorLevel = level,
-                photoPath = state.pendingPhotoPath,
+                photoPath = null,
                 manualFix = manualFix,
                 vehicleId = settings.value?.registeredVehicleAddress,
+                statusBar = state.statusBarOn,
             )
-            if (saved != null) {
-                if (state.target is DrawerTarget.Edit && state.pendingPhotoPath != null && previous?.photoPath != saved.photoPath) {
-                    container.photos.delete(previous?.photoPath)
-                }
-                withContext(Dispatchers.Default) {
-                    StatusBarNotifier.sync(app, settings.value?.statusBarEnabled == true, saved)
-                }
-            }
+            withContext(Dispatchers.Default) { StatusBarNotifier.sync(app, saved ?: container.parking.latestRecordNow()) }
             _drawer.value = DrawerUiState()
-            onSaved()
         }
     }
 
+    // ── 홈: 사진·위치 ──────────────────────────────────────────
+
+    fun attachPhoto(path: String) {
+        val current = (record.value as? RecordState.Loaded)?.record
+        if (current == null) {
+            container.photos.delete(path)
+            return
+        }
+        viewModelScope.launch {
+            val previous = container.parking.setPhoto(current.id, path)
+            if (previous != null && previous != path) container.photos.delete(previous)
+        }
+    }
+
+    /** 위치 저장 아이콘: 지금 위치를 현재 기록의 주차 위치로 저장한다 */
+    fun saveCurrentLocation() {
+        val current = (record.value as? RecordState.Loaded)?.record ?: return
+        if (_locationSave.value == LocationSaveStatus.Saving) return
+        _locationSave.value = LocationSaveStatus.Saving
+        viewModelScope.launch {
+            val fix: Fix? = container.location.currentFix(10_000L)
+            _locationSave.value = if (fix != null && container.parking.setLocation(current.id, fix) != null) {
+                LocationSaveStatus.Saved
+            } else {
+                LocationSaveStatus.Failed
+            }
+            delay(3_000L)
+            _locationSave.value = LocationSaveStatus.Idle
+        }
+    }
+
+    /** 위치 관리의 ‘현재 위치로 등록’. 결과는 설정 화면 초안에 넣고 저장 버튼으로 확정한다 */
+    suspend fun locateHere(): Fix? = container.location.currentFix(10_000L)
+
     // ── 설정 ──────────────────────────────────────────────────
 
-    fun setTheme(theme: AppThemeId) = viewModelScope.launch { container.settings.setTheme(theme) }
-    fun setDrawerSide(side: DrawerSide) = viewModelScope.launch { container.settings.setDrawerSide(side) }
-    fun setAutoRecord(enabled: Boolean) = viewModelScope.launch { container.settings.setAutoRecord(enabled) }
-
-    fun setStatusBar(enabled: Boolean) = viewModelScope.launch {
-        container.settings.setStatusBar(enabled)
-        StatusBarNotifier.sync(app, enabled, container.parking.latestRecordNow())
+    /** 설정 화면 우측 상단 저장 */
+    fun saveSettings(draft: SettingsDraft) = viewModelScope.launch {
+        val current = settings.value
+        if (current?.appTheme != draft.theme) container.settings.setTheme(draft.theme)
+        if (draft.vehicleAddress != null && draft.vehicleAddress != current?.registeredVehicleAddress) {
+            container.settings.setVehicle(draft.vehicleAddress, draft.vehicleName)
+        }
+        if (draft.homeLatitude != null && draft.homeLongitude != null) {
+            if (draft.homeLatitude != current?.homeLatitude || draft.homeLongitude != current.homeLongitude) {
+                container.settings.setHome(draft.homeLatitude, draft.homeLongitude)
+            }
+        } else if (current?.hasHome == true) {
+            container.settings.clearHome()
+        }
     }
+
+    fun setDrawerSide(side: DrawerSide) = viewModelScope.launch { container.settings.setDrawerSide(side) }
 
     /** 알림 권한을 새로 받은 뒤 상태바 표시를 다시 게시한다 */
     fun resyncStatusBar() = viewModelScope.launch {
-        StatusBarNotifier.sync(app, settings.value?.statusBarEnabled == true, container.parking.latestRecordNow())
+        StatusBarNotifier.sync(app, container.parking.latestRecordNow())
     }
 
     fun setVehicle(address: String, name: String?) = viewModelScope.launch { container.settings.setVehicle(address, name) }
     fun completeOnboarding() = viewModelScope.launch { container.settings.setOnboardingCompleted() }
 
-    /**
-     * 자동 표시 테스트. 시작 후 사용자가 홈으로 나가면 실제 자동 진입과 같은 Activity 실행 경로로 앱을 띄운다.
-     * Bluetooth 이벤트 수신 자체는 실제 차량 테스트로 따로 확인해야 한다.
-     */
-    fun startLaunchTest() {
-        _launchTest.value = LaunchTestStatus.Waiting
-        container.appScope.launch {
-            container.settings.markAutoLaunchTestStarted(System.currentTimeMillis())
-            delay(LAUNCH_TEST_DELAY_MS)
-            val background = withContext(Dispatchers.Main) {
-                !ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
-            }
-            if (!background) {
-                container.settings.clearAutoLaunchTestStarted()
-                _launchTest.value = LaunchTestStatus.NotInBackground
-                return@launch
-            }
-            AutoLauncher.launchTest(app, wasBackground = true)
-        }
-    }
-
-    private suspend fun detectLaunchTestFailure() {
-        val started = container.settings.current().autoLaunchTestStartedAt
-        if (started == 0L) return
-        if (System.currentTimeMillis() - started > LAUNCH_TEST_DELAY_MS + LAUNCH_TEST_GRACE_MS) {
-            container.settings.clearAutoLaunchTestStarted()
-            _launchTest.value = LaunchTestStatus.Failed
-        }
-    }
-
     companion object {
-        const val LAUNCH_TEST_DELAY_MS = 8_000L
-        private const val LAUNCH_TEST_GRACE_MS = 7_000L
         private const val LOCATION_ATTACH_WINDOW_MS = 3 * 60 * 1000L
     }
 }

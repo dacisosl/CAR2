@@ -170,6 +170,23 @@ fun Modifier.primarySurface(t: CarTokens, shape: Shape, enabled: Boolean = true)
     return m
 }
 
+/**
+ * 주차 경과 시간 색. 2시간부터 진한 초록, 3시간부터 버건디.
+ * 네 테마의 밝은 바탕에서 모두 본문 대비 4.5:1 이상이다.
+ */
+object ElapsedTone {
+    const val TWO_HOURS_MS = 2 * 60 * 60 * 1000L
+    const val THREE_HOURS_MS = 3 * 60 * 60 * 1000L
+    val Green = Color(0xFF1E7A4C)
+    val Burgundy = Color(0xFF8E2A3B)
+
+    fun color(elapsedMs: Long, normal: Color): Color = when {
+        elapsedMs >= THREE_HOURS_MS -> Burgundy
+        elapsedMs >= TWO_HOURS_MS -> Green
+        else -> normal
+    }
+}
+
 object MapColors {
     val background = Color(0xFFF7F8F1)
     val land = Color(0xFFF2F5EC)

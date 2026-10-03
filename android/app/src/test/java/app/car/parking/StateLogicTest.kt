@@ -9,6 +9,8 @@ import app.car.parking.platform.permissions.AutoRecordState
 import app.car.parking.platform.permissions.Readiness
 import app.car.parking.platform.permissions.SystemChecks
 import app.car.parking.ui.home.elapsedText
+import app.car.parking.ui.theme.ElapsedTone
+import app.car.parking.domain.parking.ParkingRepository
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -41,10 +43,13 @@ class ReadinessTest {
         notificationsAllowed = true,
         fineLocation = true,
         anyLocation = true,
+        locationServiceOn = true,
         batteryUnrestricted = true,
+        unusedAppExempt = true,
+        liveUpdatesAllowed = null,
         hasBarometer = true,
     )
-    private val ready = AppSettings(registeredVehicleAddress = "AA:BB", autoLaunchTestPassedAt = 1L)
+    private val ready = AppSettings(registeredVehicleAddress = "AA:BB")
 
     @Test
     fun readyOnlyWhenEverythingIsVerified() {
@@ -58,8 +63,36 @@ class ReadinessTest {
         assertEquals(AutoRecordState.PermissionMissing, Readiness.state(ready, allGood.copy(bluetoothPermission = false)))
         assertEquals(AutoRecordState.MonitoringStopped, Readiness.state(ready.copy(autoRecordRequested = false), allGood))
         assertEquals(AutoRecordState.MonitoringStopped, Readiness.state(ready, allGood.copy(bluetoothEnabled = false)))
-        assertEquals(AutoRecordState.NeedsDeviceTest, Readiness.state(ready.copy(autoLaunchTestPassedAt = 0L), allGood))
         assertEquals(AutoRecordState.Unsupported, Readiness.state(ready, allGood.copy(bluetoothSupported = false)))
+    }
+}
+
+class HomeStatusBarDefaultTest {
+    private val homeLat = 37.5665
+    private val homeLng = 126.9780
+
+    @Test
+    fun onNearHomeOffElsewhere() {
+        assertTrue(ParkingRepository.isNearHome(homeLat, homeLng, homeLat + 0.0005, homeLng))
+        assertEquals(false, ParkingRepository.isNearHome(homeLat, homeLng, homeLat + 0.01, homeLng))
+    }
+
+    @Test
+    fun offWhenHomeOrLocationUnknown() {
+        assertEquals(false, ParkingRepository.isNearHome(null, null, homeLat, homeLng))
+        assertEquals(false, ParkingRepository.isNearHome(homeLat, homeLng, null, null))
+    }
+}
+
+class ElapsedToneTest {
+    private val normal = androidx.compose.ui.graphics.Color.Black
+
+    @Test
+    fun changesAtTwoAndThreeHours() {
+        assertEquals(normal, ElapsedTone.color(ElapsedTone.TWO_HOURS_MS - 1, normal))
+        assertEquals(ElapsedTone.Green, ElapsedTone.color(ElapsedTone.TWO_HOURS_MS, normal))
+        assertEquals(ElapsedTone.Green, ElapsedTone.color(ElapsedTone.THREE_HOURS_MS - 1, normal))
+        assertEquals(ElapsedTone.Burgundy, ElapsedTone.color(ElapsedTone.THREE_HOURS_MS, normal))
     }
 }
 

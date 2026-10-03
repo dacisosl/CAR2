@@ -53,8 +53,6 @@ class MainActivity : ComponentActivity() {
             candidateId = intent.getStringExtra(AutoLauncher.EXTRA_CANDIDATE_ID),
             openPanel = intent.getBooleanExtra(AutoLauncher.EXTRA_OPEN_PANEL, false),
             autoEntry = auto,
-            launchTest = intent.getBooleanExtra(AutoLauncher.EXTRA_LAUNCH_TEST, false),
-            wasBackground = intent.getBooleanExtra(AutoLauncher.EXTRA_WAS_BACKGROUND, false),
         )
     }
 

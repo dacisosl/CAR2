@@ -50,7 +50,9 @@ import app.car.parking.ui.components.IconTarget
 import app.car.parking.ui.components.rememberPhoto
 import app.car.parking.ui.map.ParkingMap
 import app.car.parking.ui.theme.CarType
+import app.car.parking.ui.theme.ElapsedTone
 import app.car.parking.ui.theme.LocalCarTokens
+import app.car.parking.ui.LocationSaveStatus
 import app.car.parking.ui.theme.primarySurface
 import kotlinx.coroutines.delay
 
@@ -63,6 +65,9 @@ fun HomeScreen(
     onOpenReadiness: () -> Unit,
     onOpenFloor: () -> Unit,
     onOpenPhoto: (String) -> Unit,
+    onTakePhoto: () -> Unit,
+    locationSave: LocationSaveStatus,
+    onSaveLocation: () -> Unit,
 ) {
     val t = LocalCarTokens.current
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -89,26 +94,47 @@ fun HomeScreen(
                 Text(
                     text = record?.let { elapsedText(now - it.detectedAt) } ?: "아직 기록이 없어요",
                     style = if (record != null) CarType.elapsed else CarType.title,
-                    color = t.black,
+                    // 2시간부터 진한 초록, 3시간부터 버건디
+                    color = record?.let { ElapsedTone.color(now - it.detectedAt, t.black) } ?: t.black,
                     modifier = Modifier.semantics { heading() },
                 )
                 Spacer(Modifier.height(16.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     FloorCard(record, onOpenFloor, Modifier.weight(1f))
-                    VehicleCard(record?.photoPath, onOpenPhoto, Modifier.weight(1f))
+                    VehicleCard(record != null, record?.photoPath, onOpenPhoto, onTakePhoto, Modifier.weight(1f))
                 }
                 Spacer(Modifier.height(20.dp))
                 if (record != null) {
-                    Text(
-                        record.placeName ?: "주차 위치",
-                        style = CarType.title,
-                        color = t.black,
-                    )
-                    Text(
-                        record.zoneMemo ?: locationSummary(record, now),
-                        style = CarType.secondary,
-                        color = t.textSecondary,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                record.placeName ?: "주차 위치",
+                                style = CarType.title,
+                                color = t.black,
+                            )
+                            Text(
+                                when (locationSave) {
+                                    LocationSaveStatus.Saving -> "현재 위치를 확인하고 있어요"
+                                    LocationSaveStatus.Saved -> "현재 위치를 주차 위치로 저장했어요"
+                                    LocationSaveStatus.Failed -> "현재 위치를 찾지 못했어요. 잠시 후 다시 눌러 주세요"
+                                    LocationSaveStatus.Idle -> record.zoneMemo ?: locationSummary(record)
+                                },
+                                style = CarType.secondary,
+                                color = t.textSecondary,
+                            )
+                        }
+                        // 위치 저장: 지금 위치를 이 기록의 주차 위치로 저장
+                        IconTarget(
+                            icon = R.drawable.ic_add_location,
+                            description = "현재 위치를 주차 위치로 저장",
+                            onClick = onSaveLocation,
+                            enabled = locationSave != LocationSaveStatus.Saving,
+                            tint = t.onPrimary,
+                            background = t.primary,
+                            border = t.primaryHairline,
+                            iconSize = 22.dp,
+                        )
+                    }
                 } else {
                     Text(
                         "층수 카드를 눌러 직접 기록할 수 있어요",
@@ -191,7 +217,13 @@ private fun FloorCard(record: ParkingRecordEntity?, onClick: () -> Unit, modifie
 }
 
 @Composable
-private fun VehicleCard(photoPath: String?, onOpenPhoto: (String) -> Unit, modifier: Modifier) {
+private fun VehicleCard(
+    hasRecord: Boolean,
+    photoPath: String?,
+    onOpenPhoto: (String) -> Unit,
+    onTakePhoto: () -> Unit,
+    modifier: Modifier,
+) {
     val t = LocalCarTokens.current
     val photo = rememberPhoto(photoPath, maxSidePx = 640)
     Box(
@@ -200,25 +232,55 @@ private fun VehicleCard(photoPath: String?, onOpenPhoto: (String) -> Unit, modif
             .clip(t.cardShape)
             .background(t.surface)
             .let { m ->
-                if (photoPath != null) {
-                    m.clickable(role = Role.Button) { onOpenPhoto(photoPath) }
-                        .semantics { contentDescription = "주차 사진 보기" }
-                } else m
+                when {
+                    // 사진이 있으면 미리보기를 눌러 크게 본다
+                    photoPath != null -> m.clickable(role = Role.Button) { onOpenPhoto(photoPath) }
+                        .semantics { contentDescription = "주차 사진 크게 보기" }
+                    hasRecord -> m.clickable(role = Role.Button, onClick = onTakePhoto)
+                        .semantics(mergeDescendants = true) { contentDescription = "주차 사진 찍기" }
+                    else -> m
+                }
             },
     ) {
         if (photo != null) {
             Image(photo, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
+            // 다시 찍기
+            IconTarget(
+                icon = R.drawable.ic_camera,
+                description = "주차 사진 다시 찍기",
+                onClick = onTakePhoto,
+                tint = t.onPrimary,
+                background = t.primary.copy(alpha = 0.82f),
+                size = 40.dp,
+                iconSize = 20.dp,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp),
+            )
         } else {
             Column(Modifier.padding(16.dp)) {
                 Text("내 차량", style = CarType.secondary, color = t.black)
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(8.dp))
                 Image(
                     painterResource(t.vehicleRes),
                     contentDescription = null,
                     contentScale = ContentScale.Fit,
                     colorFilter = t.vehicleFilter,
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    modifier = Modifier.fillMaxWidth().height(40.dp),
                 )
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        painterResource(R.drawable.ic_camera),
+                        contentDescription = null,
+                        tint = if (hasRecord) t.primary else t.inactive,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        if (hasRecord) "주차 사진 찍기" else "기록 후 사진 추가",
+                        style = CarType.label.copy(fontWeight = FontWeight.Bold),
+                        color = if (hasRecord) t.black else t.inactive,
+                    )
+                }
             }
         }
     }
@@ -238,12 +300,13 @@ fun elapsedText(ms: Long): String {
 }
 
 /** 저장 위치의 출처와 정확도. 지하의 대체 좌표를 정확한 주차 면처럼 표시하지 않는다 */
-private fun locationSummary(record: ParkingRecordEntity, now: Long): String {
-    if (record.latitude == null) return "위치 없음 · 층수와 사진으로 기록됨"
+fun locationSummary(record: ParkingRecordEntity): String {
+    if (record.latitude == null) return "위치 없음 · 오른쪽 아이콘으로 저장할 수 있어요"
     val accuracy = record.locationAccuracyMeters?.let { "오차 약 ${it.toInt()}m" } ?: "정확도 정보 없음"
     val source = when (record.locationSource) {
         LocationSource.AFTER_DISCONNECT -> "하차 직후 위치"
         LocationSource.MANUAL -> "기록 시 위치"
+        LocationSource.SAVED -> "직접 저장한 위치"
         else -> "저장 위치"
     }
     return "$source · $accuracy"

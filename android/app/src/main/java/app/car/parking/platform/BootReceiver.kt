@@ -17,8 +17,7 @@ class BootReceiver : BroadcastReceiver() {
         val pending = goAsync()
         CoroutineScope(Dispatchers.Default).launch {
             try {
-                val settings = app.container.settings.current()
-                StatusBarNotifier.sync(app, settings.statusBarEnabled, app.container.parking.latestRecordNow())
+                StatusBarNotifier.sync(app, app.container.parking.latestRecordNow())
             } finally {
                 pending.finish()
             }

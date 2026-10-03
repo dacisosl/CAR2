@@ -41,10 +41,8 @@ import app.car.parking.R
 import app.car.parking.data.bluetooth.BondedDevices
 import app.car.parking.data.storage.AppSettings
 import app.car.parking.platform.permissions.SystemChecks
-import app.car.parking.ui.LaunchTestStatus
 import app.car.parking.ui.components.IconTarget
 import app.car.parking.ui.components.PrimaryButton
-import app.car.parking.ui.settings.LaunchTestPanel
 import app.car.parking.ui.settings.ReadinessChecklist
 import app.car.parking.ui.settings.VehicleList
 import app.car.parking.ui.settings.rememberSystemActions
@@ -54,16 +52,13 @@ import app.car.parking.ui.theme.LocalCarTokens
 private const val WELCOME = 0
 private const val VEHICLE = 1
 private const val PERMISSIONS = 2
-private const val TEST = 3
 
-/** 첫 시작: 차량 선택 → 필요한 권한과 실행 조건 → 자동 화면 표시 테스트 */
+/** 첫 시작: 차량 선택 → 필요한 권한과 실행 조건 */
 @Composable
 fun OnboardingScreen(
     settings: AppSettings,
     checks: SystemChecks,
-    launchTest: LaunchTestStatus,
     onVehicle: (String, String?) -> Unit,
-    onStartLaunchTest: () -> Unit,
     onRefresh: () -> Unit,
     onFinish: () -> Unit,
 ) {
@@ -74,17 +69,13 @@ fun OnboardingScreen(
         else -> StepScaffold(
             step = step,
             onBack = { step-- },
-            nextLabel = when (step) {
-                VEHICLE -> "다음"
-                PERMISSIONS -> "다음"
-                else -> "완료"
-            },
+            nextLabel = if (step == VEHICLE) "다음" else "완료",
             nextEnabled = when (step) {
                 VEHICLE -> settings.registeredVehicleAddress != null
                 PERMISSIONS -> checks.bluetoothPermission && checks.overlayAllowed
                 else -> true
             },
-            onNext = { if (step == TEST) onFinish() else step++ },
+            onNext = { if (step == PERMISSIONS) onFinish() else step++ },
             onSkip = onFinish,
         ) {
             val context = LocalContext.current
@@ -104,15 +95,6 @@ fun OnboardingScreen(
                 PERMISSIONS -> {
                     StepTitle("자동 기록 준비", "이 휴대폰에서 아직 필요한 항목이에요. 설정에서 돌아오면 상태를 다시 확인해요.")
                     ReadinessChecklist(settings, checks, actions)
-                }
-                TEST -> {
-                    StepTitle("자동 표시 확인", "차에서 내렸을 때처럼 알림 없이 앱이 떠오르는지 지금 확인해요.")
-                    LaunchTestPanel(
-                        status = launchTest,
-                        passedInfo = null,
-                        overlayAllowed = checks.overlayAllowed,
-                        onStart = onStartLaunchTest,
-                    )
                 }
             }
         }
@@ -152,7 +134,7 @@ private fun Welcome(onConnect: () -> Unit, onLater: () -> Unit) {
         Spacer(Modifier.height(16.dp))
         Text("차에서 내리면\n주차 기록을 도와드려요", style = CarType.body, color = t.black, textAlign = TextAlign.Center)
         Spacer(Modifier.height(12.dp))
-        Text("차량 선택 · 권한 확인 · 연결 테스트", style = CarType.secondary, color = t.textSecondary)
+        Text("차량 선택 · 권한 확인", style = CarType.secondary, color = t.textSecondary)
         Spacer(Modifier.height(48.dp))
         PrimaryButton("내 차량 연결하기", onConnect, Modifier.fillMaxWidth().heightIn(min = 52.dp))
         Box(
@@ -180,7 +162,7 @@ private fun StepScaffold(
     Column(Modifier.fillMaxSize().background(t.white).safeDrawingPadding()) {
         Row(Modifier.fillMaxWidth().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
             IconTarget(R.drawable.ic_arrow_back, "이전", onBack)
-            Text("$step / 3", style = CarType.secondary, color = t.textSecondary, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
+            Text("$step / 2", style = CarType.secondary, color = t.textSecondary, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
             Box(
                 Modifier.heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onSkip).padding(horizontal = 12.dp),
                 contentAlignment = Alignment.Center,

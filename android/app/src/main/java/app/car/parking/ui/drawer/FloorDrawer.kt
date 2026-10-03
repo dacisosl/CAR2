@@ -29,10 +29,11 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -46,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -90,8 +92,9 @@ fun FloorDrawer(
     onSelect: (Int) -> Unit,
     onClose: () -> Unit,
     onSave: () -> Unit,
-    onTakePhoto: () -> Unit,
-    onPickPhoto: () -> Unit,
+    onStatusBarChange: (Boolean) -> Unit,
+    notificationsAllowed: Boolean,
+    onRequestNotifications: () -> Unit,
 ) {
     val t = LocalCarTokens.current
     val haptic = LocalHapticFeedback.current
@@ -230,45 +233,48 @@ fun FloorDrawer(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
 
-            // 카메라 아이콘 버튼 + 작은 저장 버튼, 한 행 두 열. 둘 다 패널 안
+            // 상태바 스위치 + 작은 저장 버튼, 한 행 두 열. 둘 다 패널 안
             Row(
-                Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 16.dp),
+                Modifier.fillMaxWidth().padding(top = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                var menu by remember { mutableStateOf(false) }
-                val hasPhoto = state.pendingPhotoPath != null
-                Box {
-                    IconTarget(
-                        icon = R.drawable.ic_camera,
-                        description = if (hasPhoto) "주차 사진 추가, 사진 선택됨" else "주차 사진 추가",
-                        onClick = { menu = true },
-                        shape = t.buttonShape,
-                        background = t.white,
-                        border = t.accentSilver ?: t.border,
-                        iconSize = 24.dp,
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .height(56.dp)
+                        .clip(t.buttonShape)
+                        .border(1.dp, t.accentSilver ?: t.border, t.buttonShape)
+                        .toggleable(value = state.statusBarOn, role = Role.Switch) { on ->
+                            onStatusBarChange(on)
+                            if (on && !notificationsAllowed) onRequestNotifications()
+                        }
+                        .semantics(mergeDescendants = true) {
+                            contentDescription = "상태바에 층수 표시"
+                        },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Text("상태바", style = CarType.label.copy(fontWeight = FontWeight.Bold), color = t.black)
+                    Switch(
+                        checked = state.statusBarOn,
+                        onCheckedChange = null,
+                        modifier = Modifier.scale(0.72f).height(28.dp),
+                        colors = SwitchDefaults.colors(
+                            checkedTrackColor = t.primary,
+                            checkedThumbColor = t.onPrimary,
+                            checkedBorderColor = t.primary,
+                            uncheckedTrackColor = t.border,
+                            uncheckedThumbColor = t.white,
+                            uncheckedBorderColor = t.border,
+                        ),
                     )
-                    if (hasPhoto) {
-                        Box(
-                            Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(4.dp)
-                                .size(10.dp)
-                                .clip(CircleShape)
-                                .background(t.primary),
-                        )
-                    }
-                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                        DropdownMenuItem(text = { Text("사진 촬영") }, onClick = { menu = false; onTakePhoto() })
-                        DropdownMenuItem(text = { Text("앨범에서 선택") }, onClick = { menu = false; onPickPhoto() })
-                    }
                 }
                 val canSave = state.selectedLevel != null && !state.saving
                 Box(
                     Modifier
-                        .weight(1f)
-                        .widthIn(max = 96.dp)
-                        .height(48.dp)
+                        .width(92.dp)
+                        .height(56.dp)
                         .clip(t.buttonShape)
                         .primarySurface(t, t.buttonShape, enabled = canSave)
                         .clickable(enabled = canSave, role = Role.Button, onClick = onSave)
@@ -284,6 +290,16 @@ fun FloorDrawer(
                     )
                 }
             }
+            Text(
+                when {
+                    state.statusBarOn && !notificationsAllowed -> "상태바 표시에 알림 권한이 필요해요"
+                    state.statusBarOn -> "저장하면 상태바에 층수가 표시돼요"
+                    else -> "상태바 표시 꺼짐"
+                },
+                style = CarType.label,
+                color = t.textSecondary,
+                modifier = Modifier.padding(top = 6.dp, bottom = 12.dp),
+            )
         }
     }
 }

@@ -31,7 +31,7 @@ import app.car.parking.domain.floor.Floors
  *  - 알림창에는 층·경과 시간을 표시한다. 탭하면 홈이 열린다(자동 표시 진입 경로와는 별개).
  *  - Android 16: Live Updates 승격을 요청해 상태바 칩·잠금화면에 표시한다.
  *  - 일반 상시 알림이라 서비스가 종료돼도 남는다. 재부팅·업데이트 후에는 BootReceiver가 다시 게시한다.
- *  - 설정의 ‘상태바 층 표시’로 켜고 끈다.
+ *  - 층수를 기록할 때 패널의 상태바 스위치로 기록마다 켜고 끈다(집 근처 기본 켜짐, 그 외 기본 꺼짐).
  */
 object StatusBarNotifier {
 
@@ -84,9 +84,9 @@ object StatusBarNotifier {
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
 
-    /** 설정과 기록에 맞춰 표시하거나 지운다. */
-    fun sync(context: Context, enabled: Boolean, record: ParkingRecordEntity?) {
-        if (!enabled || record == null) {
+    /** 최신 기록의 상태바 선택에 맞춰 표시하거나 지운다. */
+    fun sync(context: Context, record: ParkingRecordEntity?) {
+        if (record == null || !record.statusBarShown) {
             dismiss(context)
             return
         }

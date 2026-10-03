@@ -7,7 +7,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.runtime.Composable
@@ -21,6 +23,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -41,6 +44,7 @@ import app.car.parking.ui.drawer.FloorDrawer
 import app.car.parking.ui.home.HomeScreen
 import app.car.parking.ui.onboarding.OnboardingScreen
 import app.car.parking.ui.settings.SettingsScreen
+import app.car.parking.ui.settings.rememberSystemActions
 import app.car.parking.ui.theme.CarTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -57,7 +61,7 @@ fun CarRoot(viewModel: AppViewModel, onUnlockThen: (() -> Unit) -> Unit) {
     val drawer by viewModel.drawer.collectAsState()
     val checks by viewModel.checks.collectAsState()
     val readiness by viewModel.readiness.collectAsState()
-    val launchTest by viewModel.launchTest.collectAsState()
+    val locationSave by viewModel.locationSave.collectAsState()
 
     var screen by rememberSaveable { mutableStateOf(if (settings.onboardingCompleted) Screen.Home else Screen.Onboarding) }
     var settingsFocusReadiness by rememberSaveable { mutableStateOf(false) }
@@ -69,40 +73,32 @@ fun CarRoot(viewModel: AppViewModel, onUnlockThen: (() -> Unit) -> Unit) {
     LaunchedEffect(checks.notificationsAllowed) { if (checks.notificationsAllowed) viewModel.resyncStatusBar() }
 
     CarTheme(settings.appTheme) {
+        val actions = rememberSystemActions(viewModel::refreshChecks)
         when (screen) {
             Screen.Onboarding -> OnboardingScreen(
                 settings = settings,
                 checks = checks,
-                launchTest = launchTest,
                 onVehicle = { address, name -> viewModel.setVehicle(address, name) },
-                onStartLaunchTest = viewModel::startLaunchTest,
                 onRefresh = viewModel::refreshChecks,
                 onFinish = {
                     viewModel.completeOnboarding()
                     screen = Screen.Home
                 },
             )
-            Screen.Settings -> {
-                BackHandler { screen = Screen.Home }
-                SettingsScreen(
-                    settings = settings,
-                    checks = checks,
-                    readiness = readiness,
-                    launchTest = launchTest,
-                    scrollToReadiness = settingsFocusReadiness,
-                    onBack = { screen = Screen.Home },
-                    onTheme = { viewModel.setTheme(it) },
-                    onSide = { viewModel.setDrawerSide(it) },
-                    onAutoRecord = { viewModel.setAutoRecord(it) },
-                    onStatusBar = { viewModel.setStatusBar(it) },
-                    onVehicle = { address, name -> viewModel.setVehicle(address, name) },
-                    onStartLaunchTest = viewModel::startLaunchTest,
-                    onRefresh = viewModel::refreshChecks,
-                )
-            }
+            Screen.Settings -> SettingsScreen(
+                settings = settings,
+                checks = checks,
+                readiness = readiness,
+                scrollToReadiness = settingsFocusReadiness,
+                onBack = { screen = Screen.Home },
+                onSave = { viewModel.saveSettings(it) },
+                locateHere = viewModel::locateHere,
+                onRefresh = viewModel::refreshChecks,
+            )
             Screen.Home -> {
                 val record = (recordState as? RecordState.Loaded)?.record
                 val location = rememberCurrentLocation(checks.anyLocation)
+                val takePhoto = rememberTakePhoto(onUnlockThen, viewModel::attachPhoto)
                 Box(Modifier.fillMaxSize()) {
                     HomeScreen(
                         record = record,
@@ -112,10 +108,30 @@ fun CarRoot(viewModel: AppViewModel, onUnlockThen: (() -> Unit) -> Unit) {
                         onOpenReadiness = { settingsFocusReadiness = true; screen = Screen.Settings },
                         onOpenFloor = viewModel::openFromFloorCard,
                         onOpenPhoto = { viewingPhoto = it },
+                        onTakePhoto = takePhoto,
+                        locationSave = locationSave,
+                        onSaveLocation = {
+                            when {
+                                !checks.anyLocation -> actions.requestLocation()
+                                !checks.locationServiceOn -> actions.openLocationSettings()
+                                else -> viewModel.saveCurrentLocation()
+                            }
+                        },
                     )
                     if (drawer.open) {
                         BackHandler { viewModel.closeDrawer() }
-                        DrawerHost(viewModel, drawer, settings.drawerSide, onUnlockThen)
+                        FloorDrawer(
+                            state = drawer,
+                            side = settings.drawerSide,
+                            // 사이드바 위치는 패널 손잡이를 길게 눌러 끌어서만 바꾼다
+                            onSideChange = { viewModel.setDrawerSide(it) },
+                            onSelect = viewModel::selectLevel,
+                            onClose = viewModel::closeDrawer,
+                            onSave = viewModel::save,
+                            onStatusBarChange = viewModel::setDrawerStatusBar,
+                            notificationsAllowed = checks.notificationsAllowed,
+                            onRequestNotifications = actions::requestNotifications,
+                        )
                     }
                 }
             }
@@ -124,46 +140,24 @@ fun CarRoot(viewModel: AppViewModel, onUnlockThen: (() -> Unit) -> Unit) {
     }
 }
 
+/** 홈 차량 카드의 사진 찍기. 잠금 화면 위에서는 정상 시스템 인증 뒤 카메라를 연다 */
 @Composable
-private fun DrawerHost(
-    viewModel: AppViewModel,
-    drawer: DrawerUiState,
-    side: app.car.parking.data.storage.DrawerSide,
-    onUnlockThen: (() -> Unit) -> Unit,
-) {
+private fun rememberTakePhoto(onUnlockThen: (() -> Unit) -> Unit, onTaken: (String) -> Unit): () -> Unit {
     val context = LocalContext.current
     val photos = (context.applicationContext as CarApp).container.photos
-    val scope = rememberCoroutineScope()
     var captureTarget by rememberSaveable { mutableStateOf<String?>(null) }
-
-    val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) scope.launch { photos.importPicked(uri)?.let(viewModel::setPendingPhoto) }
-    }
     val capture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
         val path = captureTarget
         captureTarget = null
-        if (ok && photos.exists(path)) viewModel.setPendingPhoto(path!!) else photos.delete(path)
+        if (ok && photos.exists(path)) onTaken(path!!) else photos.delete(path)
     }
-
-    FloorDrawer(
-        state = drawer,
-        side = side,
-        onSideChange = { viewModel.setDrawerSide(it) },
-        onSelect = viewModel::selectLevel,
-        onClose = viewModel::closeDrawer,
-        onSave = { viewModel.save() },
-        // 잠금 화면 위에서 열린 경우 정상 시스템 인증을 거친 뒤 사진 기능을 연다
-        onTakePhoto = {
-            onUnlockThen {
-                val (file, uri) = photos.newCaptureTarget()
-                captureTarget = file.absolutePath
-                runCatching { capture.launch(uri) }.onFailure { photos.delete(file.absolutePath); captureTarget = null }
-            }
-        },
-        onPickPhoto = {
-            onUnlockThen { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
-        },
-    )
+    return {
+        onUnlockThen {
+            val (file, uri) = photos.newCaptureTarget()
+            captureTarget = file.absolutePath
+            runCatching { capture.launch(uri) }.onFailure { photos.delete(file.absolutePath); captureTarget = null }
+        }
+    }
 }
 
 /** 홈이 보이는 동안만 위치 업데이트를 받는다. 화면을 벗어나면 요청을 해제한다 */
@@ -205,11 +199,19 @@ private fun rememberCurrentLocation(permitted: Boolean): CurrentLocationState {
     return state
 }
 
+/** 주차 사진을 큰 모달 창으로 확인한다 */
 @Composable
 private fun PhotoViewer(path: String, onDismiss: () -> Unit) {
+    val t = app.car.parking.ui.theme.LocalCarTokens.current
     val photo = rememberPhoto(path, maxSidePx = 2048)
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Box(Modifier.fillMaxSize().background(Color.Black)) {
+        Box(
+            Modifier
+                .fillMaxWidth(0.94f)
+                .fillMaxHeight(0.82f)
+                .clip(t.cardShape)
+                .background(Color.Black),
+        ) {
             if (photo != null) {
                 Image(photo, contentDescription = "주차 사진", contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
             } else if (!File(path).exists()) {
@@ -220,7 +222,8 @@ private fun PhotoViewer(path: String, onDismiss: () -> Unit) {
                 "닫기",
                 onDismiss,
                 tint = Color.White,
-                modifier = Modifier.align(Alignment.TopEnd).safeDrawingPadding().padding(8.dp),
+                background = Color.Black.copy(alpha = 0.45f),
+                modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
             )
         }
     }

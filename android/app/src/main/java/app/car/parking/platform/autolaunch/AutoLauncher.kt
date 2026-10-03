@@ -20,7 +20,6 @@ object AutoLauncher {
     const val EXTRA_CANDIDATE_ID = "candidateId"
     const val EXTRA_OPEN_PANEL = "openPanel"
     const val EXTRA_AUTO_ENTRY = "autoEntry"
-    const val EXTRA_LAUNCH_TEST = "launchTest"
     const val EXTRA_WAS_BACKGROUND = "wasBackground"
 
     private const val FALLBACK_CHANNEL = "parking_candidate_v1"
@@ -28,30 +27,25 @@ object AutoLauncher {
 
     fun canDrawOverlays(context: Context): Boolean = Settings.canDrawOverlays(context)
 
-    fun intent(context: Context, candidateId: String?, test: Boolean, wasBackground: Boolean): Intent =
+    fun intent(context: Context, candidateId: String, wasBackground: Boolean): Intent =
         Intent(context, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             .putExtra(EXTRA_AUTO_ENTRY, true)
-            .putExtra(EXTRA_OPEN_PANEL, !test)
-            .putExtra(EXTRA_LAUNCH_TEST, test)
+            .putExtra(EXTRA_OPEN_PANEL, true)
             .putExtra(EXTRA_WAS_BACKGROUND, wasBackground)
-            .apply { if (candidateId != null) putExtra(EXTRA_CANDIDATE_ID, candidateId) }
+            .putExtra(EXTRA_CANDIDATE_ID, candidateId)
 
     /** @return Activity 실행을 요청했으면 true. 실제로 화면이 떴는지는 Activity 쪽에서 기록한다. */
     fun launchCandidate(context: Context, candidateId: String, wasBackground: Boolean): Boolean {
         if (canDrawOverlays(context)) {
             val started = runCatching {
-                context.startActivity(intent(context, candidateId, test = false, wasBackground = wasBackground))
+                context.startActivity(intent(context, candidateId, wasBackground))
             }.isSuccess
             if (started) return true
         }
         postFallback(context, candidateId)
         return false
     }
-
-    fun launchTest(context: Context, wasBackground: Boolean): Boolean = runCatching {
-        context.startActivity(intent(context, null, test = true, wasBackground = wasBackground))
-    }.isSuccess
 
     fun cancelFallback(context: Context) {
         context.getSystemService(NotificationManager::class.java).cancel(FALLBACK_ID)
@@ -70,7 +64,7 @@ object AutoLauncher {
         val pending = PendingIntent.getActivity(
             context,
             FALLBACK_ID,
-            intent(context, candidateId, test = false, wasBackground = true),
+            intent(context, candidateId, wasBackground = true),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val notification = NotificationCompat.Builder(context, FALLBACK_CHANNEL)

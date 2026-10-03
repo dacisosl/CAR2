@@ -120,6 +120,7 @@ class ParkingRepository(
         photoPath: String?,
         manualFix: Fix?,
         vehicleId: String?,
+        statusBar: Boolean,
         nowMs: Long = System.currentTimeMillis(),
     ): ParkingRecordEntity? {
         val record = when (target) {
@@ -153,11 +154,17 @@ class ParkingRepository(
                     locationCapturedAt = candidate.locationCapturedAt,
                     locationSource = candidate.locationSource,
                     detectionSource = DetectionSource.BLUETOOTH,
+                    statusBarShown = statusBar,
                 )
             }
             is DrawerTarget.Edit -> {
                 val existing = dao.latestRecord()?.takeIf { it.id == target.recordId } ?: return null
-                existing.copy(floorLevel = floorLevel, photoPath = photoPath ?: existing.photoPath, confirmedAt = nowMs)
+                existing.copy(
+                    floorLevel = floorLevel,
+                    photoPath = photoPath ?: existing.photoPath,
+                    confirmedAt = nowMs,
+                    statusBarShown = statusBar,
+                )
             }
             DrawerTarget.Manual -> ParkingRecordEntity(
                 id = UUID.randomUUID().toString(),
@@ -174,9 +181,41 @@ class ParkingRepository(
                 locationCapturedAt = manualFix?.capturedAtMs,
                 locationSource = if (manualFix != null) LocationSource.MANUAL else LocationSource.UNAVAILABLE,
                 detectionSource = DetectionSource.MANUAL,
+                statusBarShown = statusBar,
             )
         }
         dao.upsertRecord(record)
         return record
+    }
+
+    /** 홈 차량 카드에서 찍은 사진을 현재 기록에 붙인다. 이전 사진 경로를 돌려준다 */
+    suspend fun setPhoto(recordId: String, path: String): String? {
+        val existing = dao.latestRecord()?.takeIf { it.id == recordId } ?: return null
+        dao.upsertRecord(existing.copy(photoPath = path))
+        return existing.photoPath
+    }
+
+    /** 홈의 위치 저장 아이콘. 현재 위치를 이 기록의 주차 위치로 저장한다 */
+    suspend fun setLocation(recordId: String, fix: Fix): ParkingRecordEntity? {
+        val existing = dao.latestRecord()?.takeIf { it.id == recordId } ?: return null
+        val updated = existing.copy(
+            latitude = fix.latitude,
+            longitude = fix.longitude,
+            locationAccuracyMeters = fix.accuracyMeters,
+            locationCapturedAt = fix.capturedAtMs,
+            locationSource = LocationSource.SAVED,
+        )
+        dao.upsertRecord(updated)
+        return updated
+    }
+
+    companion object {
+        const val HOME_RADIUS_M = 200.0
+
+        /** 집 근처면 상태바 기본 켜짐, 그 외(집 미등록·위치 모름 포함) 기본 꺼짐 */
+        fun isNearHome(homeLat: Double?, homeLng: Double?, lat: Double?, lng: Double?): Boolean {
+            if (homeLat == null || homeLng == null || lat == null || lng == null) return false
+            return FloorEstimator.distanceMeters(homeLat, homeLng, lat, lng) <= HOME_RADIUS_M
+        }
     }
 }

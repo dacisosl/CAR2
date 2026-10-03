@@ -1,6 +1,7 @@
 package app.car.parking.data.storage
 
 import android.content.Context
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
@@ -12,6 +13,8 @@ import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Upsert
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 object LocationSource {
@@ -20,6 +23,8 @@ object LocationSource {
     const val AFTER_DISCONNECT = "after-disconnect"
     /** 사용자가 직접 기록한 시점의 현재 위치 */
     const val MANUAL = "manual"
+    /** 홈의 위치 저장 아이콘으로 저장한 현재 위치 */
+    const val SAVED = "saved"
 }
 
 object DetectionSource {
@@ -44,6 +49,8 @@ data class ParkingRecordEntity(
     val locationCapturedAt: Long?,
     val locationSource: String,
     val detectionSource: String,
+    /** 이 기록을 상태바에 표시할지. 패널의 상태바 스위치로 기록할 때 정한다 */
+    @ColumnInfo(defaultValue = "0") val statusBarShown: Boolean = false,
 )
 
 object CandidateStatus {
@@ -126,7 +133,7 @@ interface ParkingDao {
 
 @Database(
     entities = [ParkingRecordEntity::class, CandidateEntity::class, FloorReferenceEntity::class],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 abstract class ParkingDatabase : RoomDatabase() {
@@ -134,6 +141,15 @@ abstract class ParkingDatabase : RoomDatabase() {
 
     companion object {
         fun create(context: Context): ParkingDatabase =
-            Room.databaseBuilder(context, ParkingDatabase::class.java, "parking.db").build()
+            Room.databaseBuilder(context, ParkingDatabase::class.java, "parking.db")
+                .addMigrations(MIGRATION_1_2)
+                .build()
+
+        /** 0.2.0 → 0.3.0: 기록별 상태바 표시 여부 */
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE parking_record ADD COLUMN statusBarShown INTEGER NOT NULL DEFAULT 0")
+            }
+        }
     }
 }
