@@ -66,7 +66,8 @@ Play Console → 앱 → 성장 → 스토어 등록정보 → 기본 스토어 
 | 앱 / 게임 | 앱 |
 | 카테고리 | 자동차 및 차량 (Auto & Vehicles). 대안: 지도/내비게이션 |
 | 태그(최대 5) | 주차, 자동차, 위치 기록, 유틸리티, 생산성 중에서 Console이 제시하는 항목 선택 |
-| 이메일 | **[연락용 이메일 — 직접 입력]** (스토어에 공개됨) |
+| 전화번호 | 비워 둠 (선택 항목) |
+| 이메일 | **[연락용 이메일 — 직접 입력]** (Play 필수 항목, 스토어에 공개됨) |
 | 웹사이트 | https://github.com/dacisosl/CAR2 (선택) |
 | 개인정보처리방침 URL | https://github.com/dacisosl/CAR2/blob/main/docs/PRIVACY_POLICY.md |
 
