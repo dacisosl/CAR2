@@ -132,13 +132,14 @@ private fun Welcome(onConnect: () -> Unit, onLater: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Spacer(Modifier.height(56.dp))
-        Image(painterResource(R.drawable.car_logo), "CAR 주차기록", Modifier.width(168.dp), contentScale = ContentScale.FillWidth)
+        Image(painterResource(R.drawable.car_logo), "CAR 주차기록", Modifier.width(168.dp), contentScale = ContentScale.FillWidth, colorFilter = t.logoFilter)
         Spacer(Modifier.height(40.dp))
         Image(
             painterResource(t.vehicleRes),
             contentDescription = null,
             modifier = Modifier.fillMaxWidth(0.72f),
             contentScale = ContentScale.FillWidth,
+            colorFilter = t.vehicleFilter,
         )
         Spacer(Modifier.height(40.dp))
         Text(

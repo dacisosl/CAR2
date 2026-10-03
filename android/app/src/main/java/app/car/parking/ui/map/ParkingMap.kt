@@ -30,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -100,7 +101,7 @@ fun ParkingMap(
 
         val naverMap = map
         if (naverMap != null && connection == MapConnection.Ready) {
-            ParkingOverlays(naverMap, record, location, following)
+            ParkingOverlays(naverMap, record, location, following, LocalCarTokens.current.primary.toArgb())
         }
 
         if (styleFailed && connection == MapConnection.Ready) {
@@ -216,6 +217,7 @@ private fun ParkingOverlays(
     record: ParkingRecordEntity?,
     location: CurrentLocationState,
     following: Boolean,
+    pinColor: Int,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val marker = remember(map) { Marker() }
@@ -231,10 +233,10 @@ private fun ParkingOverlays(
     val pinLat = record?.latitude
     val pinLng = record?.longitude
     val floor = Floors.label(record?.floorLevel)
-    DisposableEffect(map, pinLat, pinLng, floor) {
+    DisposableEffect(map, pinLat, pinLng, floor, pinColor) {
         if (pinLat != null && pinLng != null) {
             marker.position = LatLng(pinLat, pinLng)
-            marker.icon = OverlayImage.fromBitmap(renderPin(floor, context.resources.displayMetrics.density))
+            marker.icon = OverlayImage.fromBitmap(renderPin(floor, context.resources.displayMetrics.density, pinColor))
             marker.anchor = android.graphics.PointF(0.5f, 1f)
             marker.map = map
         } else {
@@ -286,13 +288,13 @@ private fun ParkingOverlays(
 }
 
 /** 검정 P 핀 + 작은 흰 층수 배지 */
-private fun renderPin(floor: String?, density: Float): Bitmap {
+private fun renderPin(floor: String?, density: Float, pinColor: Int): Bitmap {
     val w = (44 * density).toInt()
     val pinH = (52 * density).toInt()
     val badgeH = if (floor != null) (22 * density).toInt() else 0
     val bitmap = Bitmap.createBitmap(w, pinH + badgeH, Bitmap.Config.ARGB_8888)
     val c = Canvas(bitmap)
-    val black = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF181818.toInt() }
+    val black = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = pinColor }
     val white = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFFFFF.toInt() }
     val r = w / 2f - density
     val path = Path().apply {

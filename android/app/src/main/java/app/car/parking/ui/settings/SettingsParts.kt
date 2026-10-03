@@ -43,9 +43,11 @@ import app.car.parking.data.storage.AppThemeId
 import app.car.parking.data.storage.DrawerSide
 import app.car.parking.ui.LaunchTestStatus
 import app.car.parking.ui.theme.CarTheme
+import app.car.parking.ui.theme.CarTokens
 import app.car.parking.ui.theme.CarType
 import app.car.parking.ui.theme.LocalCarTokens
 import app.car.parking.ui.theme.MapColors
+import app.car.parking.ui.theme.primarySurface
 
 @Composable
 fun SectionTitle(text: String, modifier: Modifier = Modifier) {
@@ -57,30 +59,50 @@ fun SectionTitle(text: String, modifier: Modifier = Modifier) {
     )
 }
 
-/** 미리보기 카드 두 개. 카드 전체를 눌러 선택하고 즉시 적용한다 */
+/** 미리보기 카드 4개(2×2). 카드 전체를 눌러 선택하고 즉시 적용한다 */
 @Composable
 fun ThemeChooser(current: AppThemeId, onSelect: (AppThemeId) -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        listOf(
-            Triple(AppThemeId.Classic, "클래식", "블랙 · 화이트"),
-            Triple(AppThemeId.Steel, "스틸 포인트", "얇은 실버 디테일"),
-        ).forEach { (id, label, desc) ->
-            val selected = current == id
-            Column(
-                Modifier
-                    .weight(1f)
-                    .selectable(selected = selected, role = Role.RadioButton) { onSelect(id) }
-                    .semantics(mergeDescendants = true) { contentDescription = "$label 테마, $desc" },
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                // 각 카드는 해당 테마로 그린 축소 미리보기
-                CarTheme(id) { ThemePreview(selected) }
-                Spacer(Modifier.height(10.dp))
-                RadioMark(selected)
-                Spacer(Modifier.height(6.dp))
-                Text(label, style = CarType.body.copy(fontWeight = FontWeight.Bold), color = LocalCarTokens.current.black)
-                Text(desc, style = CarType.label, color = LocalCarTokens.current.textSecondary)
+    Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        CarTokens.all.chunked(2).forEach { pair ->
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                pair.forEach { theme ->
+                    val selected = current == theme.id
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .selectable(selected = selected, role = Role.RadioButton) { onSelect(theme.id) }
+                            .semantics(mergeDescendants = true) { contentDescription = "${theme.label} 테마, ${theme.description}" },
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        // 각 카드는 해당 테마로 그린 축소 미리보기
+                        CarTheme(theme.id) {
+                            ThemePreview(selected)
+                            Spacer(Modifier.height(8.dp))
+                            Swatches()
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        RadioMark(selected)
+                        Spacer(Modifier.height(6.dp))
+                        Text(theme.label, style = CarType.body.copy(fontWeight = FontWeight.Bold), color = LocalCarTokens.current.black)
+                        Text(
+                            theme.description,
+                            style = CarType.label,
+                            color = LocalCarTokens.current.textSecondary,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
             }
+        }
+    }
+}
+
+@Composable
+private fun Swatches() {
+    val t = LocalCarTokens.current
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf(t.primary, t.white, t.accent).forEach {
+            Box(Modifier.size(16.dp).clip(CircleShape).background(it).border(1.dp, t.border, CircleShape))
         }
     }
 }
@@ -88,16 +110,16 @@ fun ThemeChooser(current: AppThemeId, onSelect: (AppThemeId) -> Unit) {
 @Composable
 private fun ThemePreview(selected: Boolean) {
     val t = LocalCarTokens.current
-    val frame = if (t.isSteel) RoundedCornerShape(6.dp) else RoundedCornerShape(16.dp)
+    val frame = if (t.isSilver) RoundedCornerShape(6.dp) else RoundedCornerShape(16.dp)
     Column(
         Modifier
             .fillMaxWidth()
             .clip(frame)
             .background(t.white)
-            .border(if (selected) 2.dp else 1.dp, if (selected) (t.accentSilver ?: t.black) else t.border, frame)
+            .border(if (selected) 2.dp else 1.dp, if (selected) (t.accentSilver ?: t.primary) else t.border, frame)
             .padding(10.dp),
     ) {
-        Image(painterResource(R.drawable.car_logo), null, Modifier.width(52.dp), contentScale = ContentScale.FillWidth)
+        Image(painterResource(R.drawable.car_logo), null, Modifier.width(52.dp), contentScale = ContentScale.FillWidth, colorFilter = t.logoFilter)
         Spacer(Modifier.height(6.dp))
         Text("주차한 지", style = CarType.label.copy(fontSize = 9.sp), color = t.textSecondary)
         Spacer(Modifier.height(6.dp))
@@ -107,14 +129,13 @@ private fun ThemePreview(selected: Boolean) {
                     .weight(1f)
                     .height(34.dp)
                     .clip(t.featureCardShape)
-                    .background(t.black)
-                    .let { m -> t.primaryBorder?.let { m.border(it, t.featureCardShape) } ?: m },
+                    .primarySurface(t, t.featureCardShape),
                 contentAlignment = Alignment.Center,
             ) { Text("B2", color = t.onPrimary, style = CarType.body.copy(fontWeight = FontWeight.ExtraBold)) }
             Box(
                 Modifier.weight(1f).height(34.dp).clip(t.cardShape).background(t.surface).padding(4.dp),
                 contentAlignment = Alignment.Center,
-            ) { Image(painterResource(t.vehicleRes), null, contentScale = ContentScale.Fit) }
+            ) { Image(painterResource(t.vehicleRes), null, contentScale = ContentScale.Fit, colorFilter = t.vehicleFilter) }
         }
         Spacer(Modifier.height(6.dp))
         Box(Modifier.fillMaxWidth().height(36.dp).clip(RoundedCornerShape(8.dp)).background(MapColors.background))
@@ -128,8 +149,8 @@ private fun RadioMark(selected: Boolean) {
         Modifier
             .size(22.dp)
             .clip(CircleShape)
-            .background(if (selected) t.black else t.white)
-            .border(1.5.dp, if (selected) t.black else t.inactive, CircleShape),
+            .background(if (selected) t.primary else t.white)
+            .border(1.5.dp, if (selected) t.primary else t.inactive, CircleShape),
         contentAlignment = Alignment.Center,
     ) {
         if (selected) Icon(painterResource(R.drawable.ic_check), null, tint = t.onPrimary, modifier = Modifier.size(14.dp))
@@ -153,7 +174,7 @@ fun SideChooser(side: DrawerSide, onSelect: (DrawerSide) -> Unit) {
                     .weight(1f)
                     .heightIn(min = 48.dp)
                     .clip(t.buttonShape)
-                    .background(if (selected) t.black else t.surface)
+                    .let { if (selected) it.primarySurface(t, t.buttonShape) else it.background(t.surface) }
                     .selectable(selected = selected, role = Role.RadioButton) { onSelect(value) }
                     .semantics { contentDescription = "사이드바 $label" },
                 contentAlignment = Alignment.Center,
@@ -183,7 +204,7 @@ fun SwitchRow(title: String, subtitle: String, checked: Boolean, onChange: (Bool
             onCheckedChange = null,
             enabled = enabled,
             colors = SwitchDefaults.colors(
-                checkedTrackColor = t.black,
+                checkedTrackColor = t.primary,
                 checkedThumbColor = t.white,
                 uncheckedTrackColor = t.border,
                 uncheckedThumbColor = t.white,
@@ -209,8 +230,8 @@ fun CheckRow(title: String, reason: String, done: Boolean, action: String?, onAc
             Modifier
                 .size(24.dp)
                 .clip(CircleShape)
-                .background(if (done) t.black else t.white)
-                .border(1.5.dp, if (done) t.black else t.inactive, CircleShape),
+                .background(if (done) t.primary else t.white)
+                .border(1.5.dp, if (done) t.primary else t.inactive, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
             if (done) Icon(painterResource(R.drawable.ic_check), null, tint = t.onPrimary, modifier = Modifier.size(16.dp))
@@ -228,7 +249,7 @@ fun CheckRow(title: String, reason: String, done: Boolean, action: String?, onAc
                 Modifier
                     .heightIn(min = 48.dp)
                     .clip(t.buttonShape)
-                    .border(1.dp, t.accentSilver ?: t.black, t.buttonShape)
+                    .border(1.dp, t.accentSilver ?: t.primary, t.buttonShape)
                     .clickable(role = Role.Button, onClick = onAction)
                     .padding(horizontal = 14.dp),
                 contentAlignment = Alignment.Center,
@@ -272,7 +293,7 @@ fun VehicleList(
                         .fillMaxWidth()
                         .heightIn(min = 56.dp)
                         .clip(t.cardShape)
-                        .background(if (selected) t.black else t.surface)
+                        .let { if (selected) it.primarySurface(t, t.cardShape) else it.background(t.surface) }
                         .selectable(selected = selected, role = Role.RadioButton) { onSelect(device) }
                         .padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -327,7 +348,7 @@ fun LaunchTestPanel(status: LaunchTestStatus, passedInfo: String?, overlayAllowe
                 .fillMaxWidth()
                 .heightIn(min = 48.dp)
                 .clip(t.buttonShape)
-                .background(if (overlayAllowed) t.black else t.border)
+                .primarySurface(t, t.buttonShape, enabled = overlayAllowed)
                 .clickable(enabled = overlayAllowed && status != LaunchTestStatus.Waiting, role = Role.Button, onClick = onStart),
             contentAlignment = Alignment.Center,
         ) {

@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.car.parking.ui.theme.CarType
 import app.car.parking.ui.theme.LocalCarTokens
+import app.car.parking.ui.theme.primarySurface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -78,8 +79,7 @@ fun PrimaryButton(
     Box(
         modifier = modifier
             .clip(t.buttonShape)
-            .background(if (enabled) t.black else t.border)
-            .let { m -> t.primaryBorder?.takeIf { enabled }?.let { m.border(it, t.buttonShape) } ?: m }
+            .primarySurface(t, t.buttonShape, enabled)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {

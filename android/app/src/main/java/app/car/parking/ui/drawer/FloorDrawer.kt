@@ -75,6 +75,7 @@ import app.car.parking.ui.DrawerUiState
 import app.car.parking.ui.components.IconTarget
 import app.car.parking.ui.theme.CarType
 import app.car.parking.ui.theme.LocalCarTokens
+import app.car.parking.ui.theme.primarySurface
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -202,7 +203,7 @@ fun FloorDrawer(
                         Modifier
                             .size(width = 40.dp, height = 4.dp)
                             .clip(CircleShape)
-                            .background(t.accentSilver ?: t.border),
+                            .background(t.accentSilver ?: t.accent),
                     )
                 }
             }
@@ -254,7 +255,7 @@ fun FloorDrawer(
                                 .padding(4.dp)
                                 .size(10.dp)
                                 .clip(CircleShape)
-                                .background(t.black),
+                                .background(t.primary),
                         )
                     }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
@@ -269,8 +270,7 @@ fun FloorDrawer(
                         .widthIn(max = 96.dp)
                         .height(48.dp)
                         .clip(t.buttonShape)
-                        .background(if (canSave) t.black else t.border)
-                        .let { m -> t.primaryBorder?.takeIf { canSave }?.let { m.border(it, t.buttonShape) } ?: m }
+                        .primarySurface(t, t.buttonShape, enabled = canSave)
                         .clickable(enabled = canSave, role = Role.Button, onClick = onSave)
                         .semantics {
                             contentDescription = if (canSave) "저장" else "저장, 층수를 먼저 선택하세요"
@@ -349,12 +349,7 @@ fun FloorReel(selected: Int?, onSelect: (Int) -> Unit, modifier: Modifier = Modi
                 .fillMaxWidth()
                 .height(itemHeight)
                 .clip(t.buttonShape)
-                .background(if (selected != null) t.black else Color.Transparent)
-                .border(
-                    width = 1.dp,
-                    color = if (selected != null) (t.accentSilver ?: t.black) else t.border,
-                    shape = t.buttonShape,
-                ),
+                .let { if (selected != null) it.primarySurface(t, t.buttonShape) else it.border(1.dp, t.border, t.buttonShape) },
         )
         LazyColumn(
             state = listState,

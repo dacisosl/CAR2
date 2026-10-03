@@ -12,12 +12,16 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
+/** 설정에서 고르는 4가지 디자인. 저장 키는 바꾸지 않는다(이전 ‘classic’은 그래파이트로 이어진다) */
 enum class AppThemeId(val key: String) {
-    Classic("classic"), Steel("steel");
+    Graphite("graphite"), Forest("forest"), Espresso("espresso"), Silver("steel");
 
     companion object {
-        /** 값 없음·알 수 없는 값은 클래식 */
-        fun from(value: String?): AppThemeId = entries.firstOrNull { it.key == value } ?: Classic
+        /** 값 없음·알 수 없는 값은 그래파이트. 이전 버전의 클래식은 그래파이트로 옮긴다 */
+        fun from(value: String?): AppThemeId = when (value) {
+            "classic" -> Graphite
+            else -> entries.firstOrNull { it.key == value } ?: Graphite
+        }
     }
 }
 
@@ -38,7 +42,7 @@ data class AppSettings(
     val registeredVehicleName: String? = null,
     val autoRecordRequested: Boolean = true,
     val drawerSide: DrawerSide = DrawerSide.Left,
-    val appTheme: AppThemeId = AppThemeId.Classic,
+    val appTheme: AppThemeId = AppThemeId.Graphite,
     val onboardingCompleted: Boolean = false,
     val statusBarEnabled: Boolean = true,
     val reconnectCheckMs: Long = DEFAULT_RECONNECT_MS,

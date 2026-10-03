@@ -16,9 +16,12 @@ import org.junit.Test
 class ThemeAndSideTest {
     @Test
     fun unknownOrMissingThemeFallsBackToClassic() {
-        assertEquals(AppThemeId.Classic, AppThemeId.from(null))
-        assertEquals(AppThemeId.Classic, AppThemeId.from("navy"))
-        assertEquals(AppThemeId.Steel, AppThemeId.from("steel"))
+        assertEquals(AppThemeId.Graphite, AppThemeId.from(null))
+        assertEquals(AppThemeId.Graphite, AppThemeId.from("navy"))
+        assertEquals(AppThemeId.Silver, AppThemeId.from("steel"))
+        assertEquals(AppThemeId.Graphite, AppThemeId.from("classic"))
+        assertEquals(AppThemeId.Forest, AppThemeId.from("forest"))
+        assertEquals(AppThemeId.Espresso, AppThemeId.from("espresso"))
     }
 
     @Test

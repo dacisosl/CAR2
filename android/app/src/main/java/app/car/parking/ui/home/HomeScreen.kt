@@ -51,6 +51,7 @@ import app.car.parking.ui.components.rememberPhoto
 import app.car.parking.ui.map.ParkingMap
 import app.car.parking.ui.theme.CarType
 import app.car.parking.ui.theme.LocalCarTokens
+import app.car.parking.ui.theme.primarySurface
 import kotlinx.coroutines.delay
 
 @Composable
@@ -142,6 +143,7 @@ private fun Header(readiness: AutoRecordState, onOpenSettings: () -> Unit, onOpe
             contentDescription = "CAR 주차기록",
             modifier = Modifier.width(104.dp),
             contentScale = ContentScale.FillWidth,
+            colorFilter = t.logoFilter,
         )
         Spacer(Modifier.weight(1f))
         // 자동 기록 준비 상태: 활성은 검정 심볼 + 옅은 회색 채움, 비활성은 회색 심볼
@@ -149,9 +151,9 @@ private fun Header(readiness: AutoRecordState, onOpenSettings: () -> Unit, onOpe
             icon = R.drawable.ic_bluetooth,
             description = Readiness.description(readiness),
             onClick = onOpenReadiness,
-            tint = if (active) t.black else t.inactive,
-            background = if (active) t.surface else androidx.compose.ui.graphics.Color.Transparent,
-            border = if (active) t.accentSilver else null,
+            tint = if (active) t.onPrimary else t.inactive,
+            background = if (active) t.primary else androidx.compose.ui.graphics.Color.Transparent,
+            border = if (active) t.primaryHairline else null,
         )
         Spacer(Modifier.width(4.dp))
         IconTarget(icon = R.drawable.ic_settings, description = "설정", onClick = onOpenSettings, iconSize = 24.dp)
@@ -171,8 +173,7 @@ private fun FloorCard(record: ParkingRecordEntity?, onClick: () -> Unit, modifie
         modifier
             .heightIn(min = 124.dp)
             .clip(t.featureCardShape)
-            .background(t.black)
-            .let { m -> t.primaryBorder?.let { m.border(it, t.featureCardShape) } ?: m }
+            .primarySurface(t, t.featureCardShape)
             .clickable(role = Role.Button, onClick = onClick)
             .semantics(mergeDescendants = true) { contentDescription = description }
             .padding(16.dp),
@@ -215,6 +216,7 @@ private fun VehicleCard(photoPath: String?, onOpenPhoto: (String) -> Unit, modif
                     painterResource(t.vehicleRes),
                     contentDescription = null,
                     contentScale = ContentScale.Fit,
+                    colorFilter = t.vehicleFilter,
                     modifier = Modifier.fillMaxWidth().height(52.dp),
                 )
             }
