@@ -200,6 +200,13 @@ class ParkingRepository(
         return PhotoResult(true, existing.photoPath)
     }
 
+    /** 사진 삭제. 화면에 보이던 사진이 아직 이 기록의 사진일 때만 지운다 */
+    suspend fun clearPhoto(recordId: String, path: String): Boolean {
+        val existing = dao.latestRecord()?.takeIf { it.id == recordId && it.photoPath == path } ?: return false
+        dao.upsertRecord(existing.copy(photoPath = null))
+        return true
+    }
+
     /** 홈의 위치 저장 아이콘. 현재 위치를 이 기록의 주차 위치로 저장한다 */
     suspend fun setLocation(recordId: String, fix: Fix): ParkingRecordEntity? {
         val existing = dao.latestRecord()?.takeIf { it.id == recordId } ?: return null

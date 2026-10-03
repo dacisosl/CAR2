@@ -6,6 +6,23 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
+import app.car.parking.ui.theme.CarType
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -82,6 +99,8 @@ fun CarRoot(viewModel: AppViewModel, onUnlockThen: (() -> Unit) -> Unit) {
     CarTheme(settings.appTheme) {
         SystemBarAppearance(dark = app.car.parking.ui.theme.LocalCarTokens.current.dark)
         val actions = rememberSystemActions(viewModel::refreshChecks)
+        // 홈 카드와 사진 모달(다시 찍기)이 같은 촬영 흐름을 쓴다
+        val takePhoto = rememberTakePhoto(onUnlockThen, viewModel::attachPhoto)
         when (screen) {
             Screen.Onboarding -> OnboardingScreen(
                 settings = settings,
@@ -109,7 +128,6 @@ fun CarRoot(viewModel: AppViewModel, onUnlockThen: (() -> Unit) -> Unit) {
             Screen.Home -> {
                 val record = (recordState as? RecordState.Loaded)?.record
                 val location = rememberCurrentLocation(checks.anyLocation)
-                val takePhoto = rememberTakePhoto(onUnlockThen, viewModel::attachPhoto)
                 Box(Modifier.fillMaxSize()) {
                     HomeScreen(
                         record = record,
@@ -148,7 +166,14 @@ fun CarRoot(viewModel: AppViewModel, onUnlockThen: (() -> Unit) -> Unit) {
                 }
             }
         }
-        viewingPhoto?.let { PhotoViewer(it) { viewingPhoto = null } }
+        viewingPhoto?.let { path ->
+            PhotoViewer(
+                path,
+                onDismiss = { viewingPhoto = null },
+                onRetake = { viewingPhoto = null; takePhoto() },
+                onDelete = { viewingPhoto = null; viewModel.deletePhoto(path) },
+            )
+        }
         if (updatePrompt && !drawer.open) {
             UpdateDialog(update, onInstall = viewModel::downloadAndInstall, onDismiss = viewModel::dismissUpdatePrompt)
         }
@@ -227,11 +252,12 @@ private fun rememberCurrentLocation(permitted: Boolean): CurrentLocationState {
     return state
 }
 
-/** 주차 사진을 큰 모달 창으로 확인한다 */
+/** 주차 사진을 큰 모달 창으로 확인한다. 아래에서 다시 찍거나 삭제(확인 후)할 수 있다 */
 @Composable
-private fun PhotoViewer(path: String, onDismiss: () -> Unit) {
+private fun PhotoViewer(path: String, onDismiss: () -> Unit, onRetake: () -> Unit, onDelete: () -> Unit) {
     val t = app.car.parking.ui.theme.LocalCarTokens.current
     val photo = rememberPhoto(path, maxSidePx = 2048)
+    var confirmDelete by remember { mutableStateOf(false) }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(
             Modifier
@@ -243,7 +269,7 @@ private fun PhotoViewer(path: String, onDismiss: () -> Unit) {
             if (photo != null) {
                 Image(photo, contentDescription = "주차 사진", contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
             } else if (!File(path).exists()) {
-                androidx.compose.material3.Text("사진을 찾을 수 없어요", color = Color.White, modifier = Modifier.align(Alignment.Center))
+                Text("사진을 찾을 수 없어요", color = Color.White, modifier = Modifier.align(Alignment.Center))
             }
             IconTarget(
                 R.drawable.ic_close,
@@ -253,6 +279,46 @@ private fun PhotoViewer(path: String, onDismiss: () -> Unit) {
                 background = Color.Black.copy(alpha = 0.45f),
                 modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
             )
+            Row(
+                Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                PhotoAction(R.drawable.ic_camera, "다시 찍기", Modifier.weight(1f), onRetake)
+                PhotoAction(R.drawable.ic_delete, "삭제", Modifier.weight(1f)) { confirmDelete = true }
+            }
         }
+    }
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("주차 사진을 삭제할까요?") },
+            text = { Text("삭제한 사진은 되돌릴 수 없어요. 주차 기록은 그대로 남아요.") },
+            confirmButton = {
+                TextButton(onClick = { confirmDelete = false; onDelete() }) { Text("삭제", color = t.elapsedBurgundy) }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("취소", color = t.black) } },
+            containerColor = t.white,
+            titleContentColor = t.black,
+            textContentColor = t.textSecondary,
+        )
+    }
+}
+
+@Composable
+private fun PhotoAction(icon: Int, label: String, modifier: Modifier, onClick: () -> Unit) {
+    Row(
+        modifier
+            .heightIn(min = 48.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .background(Color.Black.copy(alpha = 0.55f))
+            .border(1.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(24.dp))
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 14.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(painterResource(icon), contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(label, color = Color.White, style = CarType.body.copy(fontWeight = FontWeight.Bold))
     }
 }

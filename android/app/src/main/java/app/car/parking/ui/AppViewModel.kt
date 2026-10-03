@@ -360,6 +360,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** 주차 사진 삭제: 기록에서 떼어 낸 뒤 파일도 지운다 */
+    fun deletePhoto(path: String) {
+        val current = (record.value as? RecordState.Loaded)?.record ?: return
+        viewModelScope.launch {
+            if (container.parking.clearPhoto(current.id, path)) container.photos.delete(path)
+        }
+    }
+
     /** 위치 저장 아이콘: 지금 위치를 현재 기록의 주차 위치로 저장한다 */
     fun saveCurrentLocation() {
         val current = (record.value as? RecordState.Loaded)?.record ?: return
