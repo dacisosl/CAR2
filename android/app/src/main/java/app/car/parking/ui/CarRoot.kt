@@ -157,6 +157,7 @@ fun CarRoot(viewModel: AppViewModel, onUnlockThen: (() -> Unit) -> Unit) {
                             // 사이드바 위치는 패널 손잡이를 길게 눌러 끌어서만 바꾼다
                             onSideChange = { viewModel.setDrawerSide(it) },
                             onSelect = viewModel::selectLevel,
+                            onCenter = viewModel::setCenterLevel,
                             onClose = viewModel::closeDrawer,
                             onDismiss = viewModel::dismissDrawer,
                             onSave = viewModel::save,

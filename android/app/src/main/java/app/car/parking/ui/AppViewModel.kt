@@ -43,6 +43,8 @@ data class DrawerUiState(
     val open: Boolean = false,
     val target: DrawerTarget = DrawerTarget.Manual,
     val selectedLevel: Int? = null,
+    /** 릴 중앙(선택 띠)에 있는 층. 아직 고르지 않았을 때 저장 버튼이 이 층으로 저장한다 */
+    val centerLevel: Int? = null,
     /** 사용자가 직접 릴을 움직였으면 늦게 온 추천으로 덮어쓰지 않는다 */
     val userTouched: Boolean = false,
     val recommendation: FloorRecommendation? = null,
@@ -151,6 +153,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val updatePrompt: StateFlow<Boolean> = _updatePrompt.asStateFlow()
 
     init {
+        // 시동만 껐다 켜서 후보가 취소되면, 그 후보로 열린 패널을 저장 없이 닫는다
+        viewModelScope.launch {
+            pendingCandidate.collect { pending ->
+                val state = _drawer.value
+                val target = state.target
+                if (state.open && !state.saving && target is DrawerTarget.Candidate && pending?.id != target.candidateId) {
+                    val current = container.parking.candidate(target.candidateId)
+                    if (current?.status == CandidateStatus.CANCELLED) closeDrawer()
+                }
+            }
+        }
         val prefs = app.getSharedPreferences("update", android.content.Context.MODE_PRIVATE)
         val last = prefs.getLong("lastCheck", 0L)
         // Play 배포판은 Play가 업데이트를 맡으므로 확인하지 않는다
@@ -242,7 +255,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val now = System.currentTimeMillis()
             container.parking.expireStaleCandidates(address, now, STALE_CANDIDATE_MS)
             VehicleLink.isConnected(app, address)?.let { connected ->
-                if (connected != s.vehicleConnected) container.settings.setVehicleLink(connected)
+                // 연결로 바뀐 것을 늦게 알았으면 지금부터 운전 시간을 센다
+                if (connected != s.vehicleConnected) container.settings.setVehicleLink(connected, if (connected) now else 0L)
             }
             if (_drawer.value.open) return@launch
             val pending = container.parking.pendingCandidate.first() ?: return@launch
@@ -348,6 +362,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** 닫기: 후보를 확정하지 않고 기존 확정 기록을 유지한다 */
+    fun setCenterLevel(level: Int) {
+        if (_drawer.value.centerLevel != level) _drawer.update { it.copy(centerLevel = level) }
+    }
+
     fun closeDrawer() {
         drawerJob?.cancel()
         _drawer.update { DrawerUiState() }
@@ -371,7 +389,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun save() {
         val state = _drawer.value
-        val level = state.selectedLevel ?: return
+        // 저장 버튼은 명시적인 확인이므로, 아직 릴을 움직이지 않았으면 띠에 있는 층으로 저장한다
+        val level = state.selectedLevel ?: state.centerLevel ?: return
         if (state.saving) return
         _drawer.update { it.copy(saving = true) }
         drawerJob?.cancel()
@@ -385,7 +404,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 vehicleId = settings.value?.registeredVehicleAddress,
                 statusBar = state.statusBarOn,
             )
-            withContext(Dispatchers.Default) { StatusBarNotifier.sync(app, saved ?: container.parking.latestRecordNow()) }
+            withContext(Dispatchers.Default) { StatusBarNotifier.refresh(app) }
             _drawer.value = DrawerUiState()
         }
     }
@@ -458,7 +477,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     /** 알림 권한을 새로 받은 뒤 상태바 표시를 다시 게시한다 */
     fun resyncStatusBar() = viewModelScope.launch {
-        StatusBarNotifier.sync(app, container.parking.latestRecordNow())
+        StatusBarNotifier.refresh(app)
     }
 
     fun setVehicle(address: String, name: String?) = viewModelScope.launch { container.settings.setVehicle(address, name) }

@@ -43,10 +43,13 @@ class CarApp : Application() {
         StatusBarNotifier.createChannel(this)
         // 기록·테마가 바뀌면 위젯과 상태바 표시를 함께 맞춘다(저장·위치 저장·사진·테마 변경 포함)
         container.appScope.launch {
-            combine(container.parking.latestRecord, container.settings.settings.map { it.appTheme }) { record, _ -> record }
+            combine(
+                container.parking.latestRecord,
+                container.settings.settings.map { it.appTheme to it.vehicleConnected },
+            ) { record, look -> record to look }
                 .distinctUntilChanged()
-                .collect { record ->
-                    StatusBarNotifier.sync(this@CarApp, record)
+                .collect {
+                    StatusBarNotifier.refresh(this@CarApp)
                     ParkingWidgets.updateAll(this@CarApp)
                 }
         }

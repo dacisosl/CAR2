@@ -60,6 +60,61 @@ object StatusBarNotifier {
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
 
+    /**
+     * 기록과 차량 연결 상태를 함께 반영한다. 운전 중이면 층·시간 대신 운전 표시를 띄운다
+     * (마지막 기록에서 상태바를 켜 둔 경우에만. 꺼 둔 사용자에게 새 알림을 만들지 않는다).
+     */
+    suspend fun refresh(context: Context) {
+        val app = context.applicationContext as app.car.parking.CarApp
+        val record = app.container.parking.latestRecordNow()
+        val driving = app.container.settings.current().vehicleConnected
+        if (driving && record?.statusBarShown == true) showDriving(context) else sync(context, record)
+    }
+
+    private fun showDriving(context: Context) {
+        if (!canPost(context)) return
+        val nm = context.getSystemService(NotificationManager::class.java)
+        val open = PendingIntent.getActivity(
+            context,
+            NOTIFICATION_ID,
+            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(IconCompat.createWithBitmap(renderDrivingIcon(context)))
+            .setContentIntent(open)
+            .setContentTitle("운전 중")
+            .setContentText("차에서 내리면 주차 층수를 바로 기록해요")
+            .setColor(FloorSign.BLACK)
+            .setOngoing(true)
+            .setShowWhen(false)
+            .setSilent(true)
+            .setOnlyAlertOnce(true)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setRequestPromotedOngoing(true)
+            .setShortCriticalText("운전 중")
+            .build()
+        runCatching { nm.notify(NOTIFICATION_ID, notification) }
+    }
+
+    /** 검은 표지판에서 차 모양을 투명하게 뚫는다. 단색 상태바에서도 차 모양이 읽힌다 */
+    private fun renderDrivingIcon(context: Context): Bitmap {
+        val size = 144
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val rect = android.graphics.RectF(0f, 3f, size.toFloat(), size - 3f)
+        canvas.drawRoundRect(rect, 30f, 30f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = FloorSign.BLACK })
+        val car = androidx.core.content.ContextCompat.getDrawable(context, app.car.parking.R.drawable.ic_car_front)?.mutate()
+        if (car != null) {
+            val inset = 20
+            car.setBounds(inset, inset, size - inset, size - inset)
+            val layer = canvas.saveLayer(null, Paint().apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_OUT) })
+            car.draw(canvas)
+            canvas.restoreToCount(layer)
+        }
+        return bitmap
+    }
+
     /** 최신 기록의 상태바 선택에 맞춰 표시하거나 지운다. */
     fun sync(context: Context, record: ParkingRecordEntity?) {
         if (record == null || !record.statusBarShown) {

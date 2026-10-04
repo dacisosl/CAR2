@@ -24,13 +24,12 @@ import kotlinx.coroutines.withContext
  * 등록 차량의 ACL 연결/해제 수신. ACL_CONNECTED/DISCONNECTED는 매니페스트 수신기 허용 예외라
  * 앱 프로세스가 없어도 전달된다(시스템 ‘강제 중지’ 상태는 제외 — 실기기 검증 항목).
  *
- * 연결 → ‘이동 중’ 상태 저장, 확인 중이던 후보 취소.
- * 해제 → 후보 생성(‘하차 감지’) → 기압 스냅샷 → 재연결 확인(기본 2초) → 실제 연결 여부 조회 → 앱 자동 표시.
+ * 연결 → ‘이동 중’ 상태 저장, 확인 중·막 띄운 후보 취소(열려 있던 패널은 앱이 닫는다).
+ * 해제 → 후보 생성 → **기다리지 않고 바로 앱 자동 표시** → 뒤에서 기압 스냅샷·재연결 확인.
  *
- * 재연결 확인 동안 수신기를 goAsync로 붙잡아 둔다. 수신기를 먼저 끝내면 백그라운드 프로세스가
- * 몇 초 안에 정리될 수 있어 확인이 끝나기 전에 사라졌다(패널이 뜨지 않던 원인). 붙잡는 동안
- * 뒤이은 ACL_CONNECTED는 대기하므로, 재연결 여부는 브로드캐스트가 아니라 [VehicleLink]로 직접 묻는다.
- * 백그라운드 브로드캐스트의 수신기 제한(60초)보다 훨씬 짧게 끝낸다.
+ * 체감 속도를 위해 재연결 확인 전에 패널부터 띄운다. 앱이 앞으로 오면 프로세스가 유지되므로
+ * 확인은 앱 범위 코루틴에서 이어서 한다. 시동만 껐다 켠 경우(확인 시간 안에 다시 연결) 후보를 취소하고,
+ * 화면의 패널은 [app.car.parking.ui.AppViewModel]이 후보 취소를 보고 저장 없이 닫는다.
  */
 class VehicleEventReceiver : BroadcastReceiver() {
 
@@ -64,8 +63,14 @@ class VehicleEventReceiver : BroadcastReceiver() {
                         if (candidate == null) {
                             Log.i(TAG, "duplicate disconnect merged into existing candidate")
                         } else {
-                            Log.i(TAG, "vehicle disconnected — candidate ${candidate.id} checking for ${window}ms")
-                            handleDisconnect(app, registered, candidate.id, window)
+                            // 바로 표시 대상으로 바꾸고 앱을 띄운다
+                            app.container.parking.finishReconnectCheck(candidate.id)
+                            val wasBackground = withContext(Dispatchers.Main) {
+                                !ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+                            }
+                            val launched = AutoLauncher.launchCandidate(app, candidate.id, wasBackground)
+                            Log.i(TAG, "vehicle disconnected — candidate ${candidate.id} shown immediately, launch=$launched")
+                            app.container.appScope.launch { verifyAfterLaunch(app, registered, candidate.id, window) }
                         }
                     }
                 }
@@ -77,37 +82,23 @@ class VehicleEventReceiver : BroadcastReceiver() {
         }
     }
 
-    private suspend fun handleDisconnect(app: CarApp, address: String, candidateId: String, checkMs: Long) {
+    /** 패널을 띄운 뒤: 해제 시점 기압을 붙이고, 확인 시간이 지나 차량이 다시 연결돼 있으면 후보를 취소한다 */
+    private suspend fun verifyAfterLaunch(app: CarApp, address: String, candidateId: String, checkMs: Long) {
         val container = app.container
-        // 해제 직후 기압 스냅샷. 재연결 확인과 동시에, 확인 시간 안에 끝나도록 측정한다
         val pressure = scope.async { container.pressure.sample(windowMs = minOf(1_500L, checkMs), timeoutMs = checkMs + 500L) }
         delay(checkMs)
-        val reading = pressure.await()
-        if (reading != null) {
+        pressure.await()?.let { reading ->
             container.db.dao().candidate(candidateId)?.let {
                 container.db.dao().upsertCandidate(it.copy(pressureHpa = reading.hpa, pressureAt = reading.measuredAtMs))
             }
         }
-        if (bluetoothTurningOff(app)) {
-            container.parking.cancelCandidate(candidateId)
-            return
-        }
-        // 시동만 껐다 켠 경우: 차량이 다시 연결돼 있으면 주차가 아니다
+        if (bluetoothTurningOff(app)) return
+        // 시동만 껐다 켠 경우: 차량이 다시 연결돼 있으면 주차가 아니다(연결 이벤트를 놓쳤을 때의 보정)
         if (VehicleLink.isConnected(app, address, LINK_QUERY_MS) == true) {
             Log.i(TAG, "vehicle reconnected within check window — candidate cancelled")
             container.parking.cancelCandidate(candidateId)
             container.settings.setVehicleLink(connected = true, atMs = System.currentTimeMillis())
-            return
         }
-        if (!container.parking.finishReconnectCheck(candidateId)) {
-            Log.i(TAG, "candidate no longer checking — nothing to show")
-            return
-        }
-        val wasBackground = withContext(Dispatchers.Main) {
-            !ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
-        }
-        val launched = AutoLauncher.launchCandidate(app, candidateId, wasBackground)
-        Log.i(TAG, "candidate ready, activity launch requested=$launched background=$wasBackground")
     }
 
     private fun bluetoothTurningOff(context: Context): Boolean {

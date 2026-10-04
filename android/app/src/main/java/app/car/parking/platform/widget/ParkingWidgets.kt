@@ -62,18 +62,31 @@ object ParkingWidgets {
     suspend fun updateAll(context: Context) {
         val app = context.applicationContext as CarApp
         val record = app.container.parking.latestRecordNow()
-        val tokens = CarTokens.of(app.container.settings.current().appTheme)
+        val settings = app.container.settings.current()
+        val tokens = CarTokens.of(settings.appTheme)
+        val driving = settings.vehicleConnected
         val manager = AppWidgetManager.getInstance(context)
         val small = manager.getAppWidgetIds(ComponentName(context, FloorWidget1x1::class.java))
         val wide = manager.getAppWidgetIds(ComponentName(context, FloorWidget2x1::class.java))
         val now = System.currentTimeMillis()
-        small.forEach { manager.updateAppWidget(it, render(context, R.layout.widget_1x1, record, tokens, now)) }
-        wide.forEach { manager.updateAppWidget(it, render(context, R.layout.widget_2x1, record, tokens, now)) }
-        scheduleTick(context, enabled = record != null && (small.isNotEmpty() || wide.isNotEmpty()))
+        small.forEach { manager.updateAppWidget(it, render(context, R.layout.widget_1x1, record, tokens, now, driving)) }
+        wide.forEach { manager.updateAppWidget(it, render(context, R.layout.widget_2x1, record, tokens, now, driving)) }
+        // 운전 중에는 시간을 보여 주지 않으므로 갱신할 필요가 없다
+        scheduleTick(context, enabled = record != null && !driving && (small.isNotEmpty() || wide.isNotEmpty()))
     }
 
-    private fun render(context: Context, layout: Int, record: ParkingRecordEntity?, t: CarTokens, now: Long): RemoteViews {
+    private fun render(
+        context: Context,
+        layout: Int,
+        record: ParkingRecordEntity?,
+        t: CarTokens,
+        now: Long,
+        driving: Boolean,
+    ): RemoteViews {
+        if (driving) return renderDriving(context, layout, t)
         val views = RemoteViews(context.packageName, layout)
+        views.setViewVisibility(R.id.widget_car, android.view.View.GONE)
+        views.setViewVisibility(R.id.widget_floor, android.view.View.VISIBLE)
         val floor = record?.let { Floors.label(it.floorLevel) } ?: "—"
         val elapsedMs = record?.let { now - it.detectedAt }
         val elapsed = elapsedMs?.let { elapsedText(it) } ?: "기록 없음"
@@ -95,6 +108,30 @@ object ParkingWidgets {
             views.setTextColor(R.id.widget_location, t.textSecondary.toArgb())
             views.setContentDescription(R.id.widget_root, "주차 층수 $floor, $location, 주차한 지 $elapsed")
         }
+        val open = PendingIntent.getActivity(
+            context,
+            layout,
+            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        views.setOnClickPendingIntent(R.id.widget_root, open)
+        return views
+    }
+
+    /** 운전 중: 층·시간 대신 검은 표지판의 차량 아이콘과 ‘운전 중’ */
+    private fun renderDriving(context: Context, layout: Int, t: CarTokens): RemoteViews {
+        val views = RemoteViews(context.packageName, layout)
+        views.setInt(R.id.widget_bg, "setColorFilter", t.white.toArgb())
+        views.setInt(R.id.widget_block, "setColorFilter", FloorSign.BLACK)
+        views.setViewVisibility(R.id.widget_floor, android.view.View.GONE)
+        views.setViewVisibility(R.id.widget_car, android.view.View.VISIBLE)
+        views.setTextViewText(R.id.widget_elapsed, "운전 중")
+        views.setTextColor(R.id.widget_elapsed, t.black.toArgb())
+        if (layout == R.layout.widget_2x1) {
+            views.setTextViewText(R.id.widget_location, "내리면 층수를 기록해요")
+            views.setTextColor(R.id.widget_location, t.textSecondary.toArgb())
+        }
+        views.setContentDescription(R.id.widget_root, "운전 중")
         val open = PendingIntent.getActivity(
             context,
             layout,

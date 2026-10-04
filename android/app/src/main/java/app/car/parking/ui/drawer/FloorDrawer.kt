@@ -101,6 +101,7 @@ fun FloorDrawer(
     side: DrawerSide,
     onSideChange: (DrawerSide) -> Unit,
     onSelect: (Int) -> Unit,
+    onCenter: (Int) -> Unit,
     onClose: () -> Unit,
     onDismiss: () -> Unit,
     onSave: () -> Unit,
@@ -250,6 +251,7 @@ fun FloorDrawer(
                 FloorReel(
                     selected = state.selectedLevel,
                     onSelect = onSelect,
+                    onCenter = onCenter,
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                 )
 
@@ -290,7 +292,7 @@ fun FloorDrawer(
                             ),
                         )
                     }
-                    val canSave = state.selectedLevel != null && !state.saving
+                    val canSave = (state.selectedLevel ?: state.centerLevel) != null && !state.saving
                     Box(
                         Modifier
                             .width(92.dp)
@@ -339,7 +341,7 @@ private fun recommendationText(state: DrawerUiState): String {
  * 릴 스크롤은 층수만 바꾸고 패널 이동 제스처와 분리되어 있다.
  */
 @Composable
-fun FloorReel(selected: Int?, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
+fun FloorReel(selected: Int?, onSelect: (Int) -> Unit, onCenter: (Int) -> Unit = {}, modifier: Modifier = Modifier) {
     val t = LocalCarTokens.current
     val haptic = LocalHapticFeedback.current
     val levels = remember { Floors.reel() }
@@ -361,6 +363,8 @@ fun FloorReel(selected: Int?, onSelect: (Int) -> Unit, modifier: Modifier = Modi
             if (it is DragInteraction.Start) userDragging = true
         }
     }
+    // 띠에 있는 층을 알린다(아직 고르지 않았을 때 저장 버튼이 쓴다)
+    LaunchedEffect(centerIndex) { levels.getOrNull(centerIndex)?.let(onCenter) }
     // 손으로 돌리는 중에는 중앙에 온 층을 바로 선택한다
     LaunchedEffect(centerIndex) {
         if (userDragging) {
@@ -396,8 +400,8 @@ fun FloorReel(selected: Int?, onSelect: (Int) -> Unit, modifier: Modifier = Modi
         val itemHeight = 60.dp
         val itemPx = with(LocalDensity.current) { itemHeight.toPx() }
         val pad = ((maxHeight - itemHeight) / 2).coerceAtLeast(0.dp)
-        val filled = selected != null
-        // 중앙 선택 띠
+        // 중앙 선택 띠. 처음부터 채워서 지금 어느 층을 가리키는지 바로 보이게 한다
+        val filled = true
         Box(
             Modifier
                 .align(Alignment.Center)

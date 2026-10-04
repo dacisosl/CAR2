@@ -41,6 +41,16 @@
                 android:src="@drawable/widget_block_edge"
                 android:importantForAccessibility="no" />
 
+            <ImageView
+                android:id="@+id/widget_car"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:padding="10dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_car_front"
+                android:visibility="gone"
+                android:importantForAccessibility="no" />
+
             <TextView
                 android:id="@+id/widget_floor"
                 android:layout_width="match_parent"

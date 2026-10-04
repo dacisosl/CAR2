@@ -96,18 +96,30 @@ fun HomeScreen(
             ) {
                 Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    val driving = vehicleStatus as? VehicleStatus.Driving
                     Column(Modifier.weight(1f)) {
-                        if (record != null) Text("주차한 지", style = CarType.secondary, color = t.textSecondary)
-                        Text(
-                            text = record?.let { elapsedText(now - it.detectedAt) } ?: "아직 기록이 없어요",
-                            style = if (record != null) CarType.elapsed else CarType.title,
-                            // 2시간부터 진한 초록, 3시간부터 버건디(UHD는 어두운 바탕용 밝은 색)
-                            color = record?.let { ElapsedTone.color(now - it.detectedAt, t) } ?: t.black,
-                            modifier = Modifier.semantics { heading() },
-                        )
+                        if (driving != null) {
+                            // 차량이 연결되면 주차 시간 대신 운전 시간을 0부터 센다
+                            Text("운전 중", style = CarType.secondary, color = t.textSecondary)
+                            Text(
+                                text = if (driving.sinceMs > 0L) elapsedText(now - driving.sinceMs) else "방금",
+                                style = CarType.elapsed,
+                                color = t.black,
+                                modifier = Modifier.semantics { heading() },
+                            )
+                        } else {
+                            if (record != null) Text("주차한 지", style = CarType.secondary, color = t.textSecondary)
+                            Text(
+                                text = record?.let { elapsedText(now - it.detectedAt) } ?: "아직 기록이 없어요",
+                                style = if (record != null) CarType.elapsed else CarType.title,
+                                // 2시간부터 진한 초록, 3시간부터 버건디(UHD는 어두운 바탕용 밝은 색)
+                                color = record?.let { ElapsedTone.color(now - it.detectedAt, t) } ?: t.black,
+                                modifier = Modifier.semantics { heading() },
+                            )
+                        }
                     }
-                    // UHD: 0~3시간 계기판
-                    if (t.dial && record != null) ElapsedDial(now - record.detectedAt)
+                    // UHD: 0~3시간 계기판(운전 중에는 숨김)
+                    if (t.dial && record != null && driving == null) ElapsedDial(now - record.detectedAt)
                 }
                 Spacer(Modifier.height(16.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {

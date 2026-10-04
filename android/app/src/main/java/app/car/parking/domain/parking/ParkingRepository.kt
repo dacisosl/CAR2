@@ -48,6 +48,13 @@ class ParkingRepository(
         settings.setLastConnectedAt(atMs)
         settings.setVehicleLink(connected = true, atMs = atMs)
         dao.moveCandidates(vehicleId, CandidateStatus.CHECKING, CandidateStatus.CANCELLED)
+        // 하차 즉시 패널을 띄우므로, 확인 시간 안에 다시 연결되면 이미 표시 중인 후보도 취소한다
+        val window = settings.current().reconnectCheckMs.coerceAtLeast(AppSettings.DEFAULT_RECONNECT_MS)
+        dao.activeCandidate(vehicleId)?.let { active ->
+            if (active.status == CandidateStatus.READY && atMs - active.detectedAt in 0..window + RECONNECT_GRACE_MS) {
+                dao.setCandidateStatus(active.id, CandidateStatus.CANCELLED)
+            }
+        }
     }
 
     /**
@@ -242,6 +249,8 @@ class ParkingRepository(
     }
 
     companion object {
+        /** 연결 이벤트가 늦게 오는 경우를 감안한 여유 */
+        const val RECONNECT_GRACE_MS = 3_000L
         const val HOME_RADIUS_M = 200.0
 
         /** 집 근처면 상태바 기본 켜짐, 그 외(집 미등록·위치 모름 포함) 기본 꺼짐 */

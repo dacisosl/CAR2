@@ -21,7 +21,7 @@ class BootReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.Default).launch {
             try {
                 if (intent.action == Intent.ACTION_BOOT_COMPLETED) app.container.settings.setVehicleLink(connected = false)
-                StatusBarNotifier.sync(app, app.container.parking.latestRecordNow())
+                StatusBarNotifier.refresh(app)
             } finally {
                 pending.finish()
             }
