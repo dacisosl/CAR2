@@ -120,6 +120,7 @@ class VehicleEventReceiver : BroadcastReceiver() {
         if (VehicleLink.isConnected(app, address, LINK_QUERY_MS) == true) {
             Log.i(TAG, "vehicle reconnected within check window — candidate cancelled")
             container.parking.cancelCandidate(candidateId)
+            AutoLauncher.cancelFallback(app)
             container.settings.setVehicleLink(connected = true, atMs = queriedAt)
         }
     }

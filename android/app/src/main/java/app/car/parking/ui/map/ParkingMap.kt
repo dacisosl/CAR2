@@ -71,7 +71,6 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 private enum class MapConnection { NoKey, Connecting, Ready, AuthFailed }
 
-/** 자동 진입 시 패널 첫 프레임 뒤 지도 생성까지의 지연 */
 /** 자동 진입 때 지도 생성을 미루는 최대 시간: 주차 영상 5초 + 표지판 확대 1초 + 여유 */
 private const val MAP_DEFER_MAX_MS = 7_000L
 

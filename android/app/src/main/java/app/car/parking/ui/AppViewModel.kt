@@ -1,5 +1,6 @@
 package app.car.parking.ui
 
+import android.os.SystemClock
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -188,14 +189,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     if (current?.status != CandidateStatus.CANCELLED) return@collect
                     // 조회하는 사이 새 하차 후보의 패널로 바뀌었을 수 있다: 그 패널은 건드리지 않는다
                     var closed = false
+                    var untouchedAuto = false
                     _drawer.update {
                         closed = it.open && !it.saving && it.target == target
+                        untouchedAuto = closed && it.autoEntry && !it.userTouched
                         if (closed) DrawerUiState() else it
                     }
                     if (!closed) return@collect
                     drawerJob?.cancel()
                     // 자동으로 띄운 패널을 손대기 전에 닫았으면 원래 쓰던 앱(내비게이션 등)으로 돌아간다
-                    if (state.autoEntry && !state.userTouched) abandonAutoEntry()
+                    if (untouchedAuto) abandonAutoEntry()
                 }
             }
         }
@@ -345,11 +348,38 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
      * 이전 후보를 취소하고 새 후보를 만든 경우(곧 새 패널이 뜸)와 구분하려고 잠깐 기다린 뒤 다시 확인한다.
      */
     private fun abandonAutoEntry() {
+        if (!broughtForward) return
         viewModelScope.launch {
             delay(ABANDON_SETTLE_MS)
-            if (_drawer.value.open || container.parking.pendingCandidate.first() != null) return@launch
+            val newer = container.parking.pendingCandidate.first()
+            // 조회한 뒤에 다시 본다: 그 사이 새 패널이 열렸거나(새 하차·층수 카드) 사용자가 떠났으면 그대로 둔다
+            if (newer != null || _drawer.value.open || !broughtForward) return@launch
+            // 하차 직후(재연결 확인 시간 안)에 끝난 자동 진입만. 오래 열어 둔 패널이 나중에 정리되는 경우는 제외
+            if (SystemClock.elapsedRealtime() - broughtForwardAt > ABANDON_WINDOW_MS) return@launch
+            broughtForward = false
             _autoEntryAbandoned.tryEmit(Unit)
         }
+    }
+
+    /**
+     * 자동 진입이 이 앱을 뒤에서(또는 꺼진 화면에서) 앞으로 꺼냈고 사용자가 아직 떠나지 않았는지.
+     * 화면 재생성(회전·차량 모드 전환)에도 유지되도록 ViewModel에 둔다
+     */
+    private var broughtForward = false
+    private var broughtForwardAt = 0L
+
+    /**
+     * 화면에 새 인텐트가 왔다. 자동 진입이면 숨어 있던 화면을 꺼냈거나, 앞선 자동 진입이 꺼낸 상태가 이어지는 경우를 기억한다.
+     * 사용자가 직접 연 경우(런처·알림)는 지운다
+     */
+    fun noteEntry(auto: Boolean, viaNotification: Boolean, wasHidden: Boolean) {
+        broughtForward = auto && !viaNotification && (wasHidden || broughtForward)
+        if (broughtForward) broughtForwardAt = SystemClock.elapsedRealtime()
+    }
+
+    /** 사용자가 보던 화면을 떠났다(최근 앱 전환 등). 이후 저절로 끝나는 자동 진입은 화면을 뒤로 보내지 않는다 */
+    fun onUserLeft() {
+        broughtForward = false
     }
 
     private val _autoEntryAbandoned = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
@@ -617,6 +647,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
         /** 취소된 자동 진입을 버리기 전에 새 하차 후보가 이어지는지 기다리는 시간 */
         private const val ABANDON_SETTLE_MS = 600L
+
+        /** 자동 진입 뒤 이 시간 안에 저절로 끝난 경우만 원래 앱으로 돌려보낸다(재연결 확인 최대 10초 + 여유 3초 + 여유) */
+        private const val ABANDON_WINDOW_MS = 20_000L
 
         /** 연결 이벤트 직후 오디오 프로필이 붙기까지 기다려 주는 시간 */
         private const val LINK_GRACE_MS = 30_000L
