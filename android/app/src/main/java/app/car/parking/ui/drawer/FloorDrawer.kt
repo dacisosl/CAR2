@@ -115,6 +115,7 @@ fun FloorDrawer(
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val screenWidth = maxWidth
+        val screenHeight = maxHeight
         val fontScale = density.fontScale.coerceIn(1f, 1.3f)
         // 약 200~216dp, 화면 폭의 60% 이내. 큰 글자에서는 필요한 폭을 더 확보한다
         val panelWidth = minOf(216.dp * fontScale, screenWidth * 0.6f).coerceAtLeast(184.dp)
@@ -138,7 +139,7 @@ fun FloorDrawer(
 
         Box(Modifier.fillMaxSize().safeDrawingPadding()) {
             // 화면 전체 높이 대신 내용에 맞춘 높이. 작은 화면에서는 화면 안에 들어오게 줄인다
-            val panelHeight = minOf(540.dp * fontScale, maxHeight * 0.9f)
+            val panelHeight = minOf(540.dp * fontScale, screenHeight * 0.9f)
             val panelShape = if (side == DrawerSide.Left) {
                 RoundedCornerShape(topEnd = 20.dp, bottomEnd = 20.dp)
             } else {
