@@ -201,3 +201,27 @@
 - 실제 기기의 360dp 폭·큰 글꼴(130% 이상)에서 릴·장면 배치
 - 하차 자동 표시 뒤 잠금 화면 위 표시가 패널을 닫으면 꺼지는지, 열린 패널 위에 보조 알림이 남지 않는지
 - 지하 주차장처럼 위치가 늦게 잡힐 때 저장 후 기록·지도에 위치가 채워지는지
+
+### 하차 자동 표시 경로 — 에뮬레이터 검증 (2026-10-04, 0.3.12 + 시뮬레이션 수신기)
+
+에뮬레이터는 차량 Bluetooth 연결을 만들 수 없어, 디버그 빌드 전용 시뮬레이션 수신기(`src/debug/.../SimulateVehicleEvent.kt`, `android.permission.DUMP` 권한 필요 → adb shell만 가능, Play 릴리스 번들에 없음)로 등록 차량의 ACL 연결·해제 이벤트를 **실제 수신기와 같은 `VehicleEventReceiver.handle()` 경로**에 넣었다. Android 15 에뮬레이터(x86_64, 디버그 빌드, 과부하 없음, load 0.6).
+
+| 시나리오 | 결과 |
+|---|---|
+| 프로세스 없음(kill -9) + 런처 화면 → 해제 | 시스템 로그 `Background activity start … allowed because SYSTEM_ALERT_WINDOW permission is granted` / `BAL_ALLOW_SAW_PERMISSION` → MainActivity 실행 → 패널 열림. 브로드캐스트 → 화면 전면까지 5.9초, 그중 **4.8초가 프로세스 시작**(같은 에뮬레이터에서 `am start -W` 단순 콜드 스타트도 10.1초). 수신기 본문 → `startActivity` 호출은 0.5~0.6초(설정 읽기·후보 저장·보조 알림·실행 요청) |
+| 프로세스 살아 있음(백그라운드) → 해제 | 수신기 → `startActivity` 0.57초, 기존 작업을 앞으로 가져옴(result code 2), 패널 열림, 홈에 ‘하차 감지 · 눌러서 층수 기록’ |
+| 앱이 앞에 있음 → 해제 | `onNewIntent`로 패널이 바로 열림 |
+| 패널 열린 뒤 보조 알림(id 3) | 패널이 열리면 지워짐(0개). 실행 전에 올리므로 실기기에서는 패널이 뜨기 전 잠깐 헤드업으로 보일 수 있음(0.3.10과 같은 순서) |
+| 해제 2.05초 뒤 재연결 | 후보 취소 → 패널이 저장 없이 닫힘 → 홈 ‘차량 연결됨 · 이동 중 / 운전 중’, Bluetooth 아이콘 채움(취소 창 = 확인 시간 2초 + 여유 3초) |
+| 해제 12초 뒤 재연결 | 창 밖이라 패널 유지(설계). 홈 상태는 ‘이동 중’ |
+| ‘다른 앱 위에 표시’ 거부 → 해제 | 화면 실행 안 함(`launch=false`, 런처 유지), 보조 알림 1개. 알림과 같은 인텐트로 열면 패널이 열리고 알림이 지워짐 |
+| 화면 꺼짐(Dozing) + 밀어서 잠금 → 해제 | 화면 켜짐(에뮬레이터 6.8초), `KeyguardOccluded=true`·`canShowWhenLocked=true`로 잠금 화면 위에 패널 표시. 패널을 닫으면 `KeyguardOccluded=false`로 잠금 화면 복귀 |
+
+에뮬레이터에서 확인하지 못한 것: 실제 차량의 ACL 해제 타이밍, 제조사 절전 정책, 실기기 콜드 스타트 시간(에뮬레이터 디버그 빌드는 10초 안팎이라 수치는 참고하지 않는다).
+
+### 차 없이 폰에서 자동 표시 확인하기 (GitHub 테스트 APK, adb)
+
+1. 앱 설정에서 ‘다른 앱 위에 표시’를 허용한다.
+2. `adb shell am broadcast -a app.car.parking.debug.REGISTER -p app.car.parking --es address AA:BB:CC:DD:EE:01` — 가짜 차량을 등록한다(**실제 차량 등록이 바뀐다**. 끝나면 설정 → 차량 관리에서 실제 차량을 다시 고른다).
+3. 홈 화면으로 나가거나 화면을 끈 뒤 `adb shell am broadcast -a app.car.parking.debug.DISCONNECT -p app.car.parking` → 층수 패널이 떠야 한다.
+4. `adb shell am broadcast -a app.car.parking.debug.CONNECT -p app.car.parking` — 해제 뒤 2초 안에 보내면 패널이 닫히고 ‘운전 중’이 된다.

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 디버그 빌드 전용: 차량 이벤트 시뮬레이션 수신기. DUMP 권한(시스템·adb shell만 보유)을 가진 발신자만 보낼 수 있다 -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <receiver
+            android:name=".debug.SimulateVehicleEvent"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="app.car.parking.debug.REGISTER" />
+                <action android:name="app.car.parking.debug.CONNECT" />
+                <action android:name="app.car.parking.debug.DISCONNECT" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

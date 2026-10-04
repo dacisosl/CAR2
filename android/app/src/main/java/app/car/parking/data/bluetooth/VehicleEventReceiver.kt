@@ -35,15 +35,21 @@ class VehicleEventReceiver : BroadcastReceiver() {
         val action = intent.action ?: return
         if (action != BluetoothDevice.ACTION_ACL_CONNECTED && action != BluetoothDevice.ACTION_ACL_DISCONNECTED) return
         val device: BluetoothDevice = intentDevice(intent) ?: return
-        val app = context.applicationContext as CarApp
-        val pending = goAsync()
+        handle(context.applicationContext as CarApp, action, device.address, goAsync())
+    }
+
+    /**
+     * 수신기 본문. 디버그 빌드의 시뮬레이션 수신기(src/debug, adb 전용)도 실제 차량 없이 같은 경로를 탄다.
+     * 그때는 시스템 브로드캐스트가 아니므로 [pending]이 null이다.
+     */
+    internal fun handle(app: CarApp, action: String, address: String, pending: PendingResult?) {
         val now = System.currentTimeMillis()
         scope.launch {
             try {
                 val settings = app.container.settings.current()
                 val registered = settings.registeredVehicleAddress
                 // 이어폰·시계 등 등록하지 않은 기기는 무시한다
-                if (registered == null || !registered.equals(device.address, ignoreCase = true)) return@launch
+                if (registered == null || !registered.equals(address, ignoreCase = true)) return@launch
                 when (action) {
                     BluetoothDevice.ACTION_ACL_CONNECTED -> {
                         Log.i(TAG, "registered vehicle connected")
@@ -75,7 +81,7 @@ class VehicleEventReceiver : BroadcastReceiver() {
             } catch (t: Throwable) {
                 Log.e(TAG, "vehicle event failed", t)
             } finally {
-                pending.finish()
+                pending?.finish()
             }
         }
     }
