@@ -59,8 +59,16 @@ import com.naver.maps.map.NaverMapSdk
 import com.naver.maps.map.overlay.CircleOverlay
 import com.naver.maps.map.overlay.Marker
 import com.naver.maps.map.overlay.OverlayImage
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.shadow.InnerShadowPainter
+import androidx.compose.ui.graphics.shadow.Shadow
+import kotlinx.coroutines.delay
 
 private enum class MapConnection { NoKey, Connecting, Ready, AuthFailed }
+
+/** 자동 진입 시 패널 첫 프레임 뒤 지도 생성까지의 지연 */
+private const val MAP_DEFER_MS = 700L
 
 /**
  * 홈 지도. 저장 P 핀(확정 기록)과 현재 위치(실시간 상태)를 분리해 그린다.
@@ -71,7 +79,20 @@ fun ParkingMap(
     record: ParkingRecordEntity?,
     location: CurrentLocationState,
     modifier: Modifier = Modifier,
+    /** 저장 전 하차 후보에 붙은 위치(하차 지점). 있으면 그곳으로 한 번 맞춘다 */
+    pendingLat: Double? = null,
+    pendingLng: Double? = null,
+    /** true로 처음 그려지면 지도(MapView) 생성을 잠깐 미뤄 위에 뜨는 패널을 먼저 보여 준다 */
+    deferHost: Boolean = false,
 ) {
+    // 처음 한 번만 판단한다. 이미 만든 지도는 다시 미루지 않는다
+    var hostAllowed by remember { mutableStateOf(!deferHost) }
+    LaunchedEffect(Unit) {
+        if (!hostAllowed) {
+            delay(MAP_DEFER_MS)
+            hostAllowed = true
+        }
+    }
     val shape = RoundedCornerShape(22.dp)
     var connection by remember {
         mutableStateOf(if (BuildConfig.NAVER_MAP_KEY_ID.isBlank()) MapConnection.NoKey else MapConnection.Connecting)
@@ -80,11 +101,28 @@ fun ParkingMap(
     var following by remember { mutableStateOf(false) }
     var map by remember { mutableStateOf<NaverMap?>(null) }
     var retryKey by remember { mutableStateOf(0) }
+    // 새 주차 핀·하차 위치로 옮길 때 현재 위치 따라가기를 멈춘다
+    LaunchedEffect(record?.latitude, record?.longitude, pendingLat, pendingLng) { following = false }
 
-    val border = LocalCarTokens.current.cardBorder
+    val tokens = LocalCarTokens.current
+    // 밝은 테마: 옅은 바깥 그림자 + 헤어라인으로 지도 영역을 살짝 띄운다.
+    // UHD(어두운 바탕): 검은 바깥 그림자는 보이지 않으므로 지도 가장자리 안쪽을 옅게 어둡게 해 깊이를 준다
+    val mapElevation = if (tokens.dark) 0.dp else 6.dp
+    val mapEdge = tokens.cardBorder ?: tokens.border
+    val innerEdge = remember(shape, tokens.dark) {
+        if (tokens.dark) InnerShadowPainter(shape, Shadow(radius = 10.dp, color = Color.Black, alpha = 0.22f)) else null
+    }
     Box(
-        modifier.clip(shape).background(MapColors.background)
-            .let { m -> border?.let { m.border(1.dp, it, shape) } ?: m },
+        modifier
+            .shadow(
+                elevation = mapElevation,
+                shape = shape,
+                clip = true,
+                ambientColor = tokens.black,
+                spotColor = tokens.black.copy(alpha = 0.6f),
+            )
+            .background(MapColors.background)
+            .border(1.dp, mapEdge, shape),
     ) {
         when (connection) {
             MapConnection.NoKey, MapConnection.AuthFailed -> MapUnavailable(
@@ -94,7 +132,7 @@ fun ParkingMap(
                     { connection = MapConnection.Connecting; retryKey++ }
                 } else null,
             )
-            else -> NaverMapHost(
+            else -> if (hostAllowed) NaverMapHost(
                 key = retryKey,
                 onReady = { connection = MapConnection.Ready; map = it },
                 onAuthFailed = { connection = MapConnection.AuthFailed; map = null },
@@ -103,9 +141,14 @@ fun ParkingMap(
             )
         }
 
+        // innerShadow()는 내용보다 먼저 그려져 지도 표면에 가려지므로, 지도 다음 형제로 직접 그린다(터치는 지도로 통과)
+        if (innerEdge != null) {
+            Box(Modifier.matchParentSize().drawBehind { with(innerEdge) { draw(size) } })
+        }
+
         val naverMap = map
         if (naverMap != null && connection == MapConnection.Ready) {
-            ParkingOverlays(naverMap, record, location, following, LocalCarTokens.current.primary.toArgb())
+            ParkingOverlays(naverMap, record, location, following, LocalCarTokens.current.primary.toArgb(), pendingLat, pendingLng)
         }
 
         if (styleFailed && connection == MapConnection.Ready) {
@@ -155,7 +198,10 @@ private fun NaverMapHost(
     val context = androidx.compose.ui.platform.LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val density = LocalDensity.current
-    val mapView = remember(key) { MapView(context).apply { onCreate(Bundle()) } }
+    val mapView = remember(key) {
+        NaverClient.ensure(context)
+        MapView(context).apply { onCreate(Bundle()) }
+    }
 
     DisposableEffect(key) {
         NaverMapSdk.getInstance(context).onAuthFailedListener = NaverMapSdk.OnAuthFailedListener { onAuthFailed() }
@@ -237,6 +283,8 @@ private fun ParkingOverlays(
     location: CurrentLocationState,
     following: Boolean,
     pinColor: Int,
+    pendingLat: Double?,
+    pendingLng: Double?,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val marker = remember(map) { Marker() }
@@ -247,6 +295,10 @@ private fun ParkingOverlays(
         }
     }
     var cameraInitialized by remember(map) { mutableStateOf(false) }
+    /** 카메라를 마지막으로 맞춘 저장 핀 좌표. 새 주차·위치 저장·늦게 채운 하차 위치로 바뀌면 다시 맞춘다 */
+    var centeredPin by remember(map) { mutableStateOf<Pair<Double, Double>?>(null) }
+    /** 마지막으로 맞춘 하차 후보 좌표. 후보 위치가 붙으면 저장 전에도 그곳을 보여 준다 */
+    var centeredPending by remember(map) { mutableStateOf<Pair<Double, Double>?>(null) }
 
     // 저장 P 핀: 확정 기록의 좌표만 따른다. 현재 위치로 옮기지 않는다
     val pinLat = record?.latitude
@@ -288,14 +340,26 @@ private fun ParkingOverlays(
         onDispose { }
     }
 
-    LaunchedEffect(map, pinLat, pinLng, fix != null) {
-        if (cameraInitialized) return@LaunchedEffect
-        val target = when {
-            pinLat != null && pinLng != null -> LatLng(pinLat, pinLng)
-            fix != null -> LatLng(fix.latitude, fix.longitude)
-            else -> null
-        } ?: return@LaunchedEffect
-        map.moveCamera(CameraUpdate.scrollAndZoomTo(target, 16.5))
+    // 카메라: 하차 위치가 붙으면(저장 전) 그곳, 저장 핀 좌표가 바뀌면 새 핀으로 옮긴다.
+    // 사용자가 지도를 옮기거나 층·사진을 바꿔도 키가 바뀌지 않으므로 카메라가 끌려가지 않는다
+    LaunchedEffect(map, pinLat, pinLng, pendingLat, pendingLng, fix != null) {
+        val pin = if (pinLat != null && pinLng != null) pinLat to pinLng else null
+        val pending = if (pendingLat != null && pendingLng != null) pendingLat to pendingLng else null
+        val target: LatLng = when {
+            pending != null && pending != centeredPending -> {
+                centeredPending = pending
+                centeredPin = pin // 이전 핀으로 되돌아가지 않게 본 것으로 표시
+                LatLng(pending.first, pending.second)
+            }
+            pin != null && pin != centeredPin -> {
+                centeredPin = pin
+                LatLng(pin.first, pin.second)
+            }
+            !cameraInitialized && fix != null -> LatLng(fix.latitude, fix.longitude)
+            else -> return@LaunchedEffect
+        }
+        val update = CameraUpdate.scrollAndZoomTo(target, 16.5)
+        map.moveCamera(if (cameraInitialized) update.animate(CameraAnimation.Easing) else update)
         cameraInitialized = true
     }
 
@@ -382,5 +446,16 @@ private fun MapChip(text: String, modifier: Modifier) {
     val t = LocalCarTokens.current
     Box(modifier.clip(RoundedCornerShape(50)).background(t.white).padding(horizontal = 12.dp, vertical = 6.dp)) {
         Text(text, style = CarType.label.copy(fontWeight = FontWeight.Bold), color = t.black)
+    }
+}
+
+/** 네이버 지도 SDK 클라이언트를 처음 지도를 만들 때 한 번 설정한다 */
+private object NaverClient {
+    @Volatile private var set = false
+
+    fun ensure(context: android.content.Context) {
+        if (set || BuildConfig.NAVER_MAP_KEY_ID.isBlank()) return
+        NaverMapSdk.getInstance(context.applicationContext).client = NaverMapSdk.NcpKeyClient(BuildConfig.NAVER_MAP_KEY_ID)
+        set = true
     }
 }

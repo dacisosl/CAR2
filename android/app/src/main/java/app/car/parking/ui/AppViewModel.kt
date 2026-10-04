@@ -26,12 +26,15 @@ import app.car.parking.platform.update.UpdateInfo
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -95,7 +98,13 @@ sealed interface VehicleStatus {
     /** 등록 차량이 연결돼 있음 — 이동 중 */
     data class Driving(val sinceMs: Long) : VehicleStatus
     /** 해제를 감지해 층수 기록을 기다리는 후보가 있음 */
-    data class Exited(val candidateId: String, val detectedAtMs: Long) : VehicleStatus
+    data class Exited(
+        val candidateId: String,
+        val detectedAtMs: Long,
+        /** 하차 직후 붙인 위치. 아직 없으면 null */
+        val latitude: Double? = null,
+        val longitude: Double? = null,
+    ) : VehicleStatus
     /** 보여 줄 것 없음 */
     data object Idle : VehicleStatus
 }
@@ -110,8 +119,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application as CarApp
     private val container = app.container
 
+    // 자동 진입처럼 프로세스가 이미 설정을 읽었으면 그 값으로 첫 프레임을 바로 그린다(빈 프레임 없음)
     val settings: StateFlow<AppSettings?> = container.settings.settings
-        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, container.settings.cached)
 
     val record: StateFlow<RecordState> = container.parking.latestRecord
         .map<ParkingRecordEntity?, RecordState> { RecordState.Loaded(it) }
@@ -131,8 +141,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val vehicleStatus: StateFlow<VehicleStatus> = combine(settings, pendingCandidate, readiness) { s, candidate, ready ->
         when {
             s?.registeredVehicleAddress == null || ready == AutoRecordState.Unsupported -> VehicleStatus.Idle
-            s.vehicleConnected -> VehicleStatus.Driving(s.lastVehicleEventAt)
-            candidate != null -> VehicleStatus.Exited(candidate.id, candidate.detectedAt)
+            // 연결 기록보다 새 하차 후보가 있으면 하차로 본다(연결 해제 저장이 늦게 반영되는 첫 화면 보호)
+            s.vehicleConnected && (candidate == null || s.lastVehicleEventAt > candidate.detectedAt) ->
+                VehicleStatus.Driving(s.lastVehicleEventAt)
+            candidate != null -> VehicleStatus.Exited(candidate.id, candidate.detectedAt, candidate.latitude, candidate.longitude)
             else -> VehicleStatus.Idle
         }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, VehicleStatus.Idle)
@@ -144,6 +156,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val locationSave: StateFlow<LocationSaveStatus> = _locationSave.asStateFlow()
 
     private var drawerJob: Job? = null
+
+    /** 하차 위치 확인 작업. 패널 저장·닫기(drawerJob 취소)와 무관하게 끝까지 진행한다 */
+    private var disconnectFixJob: Job? = null
+    private var disconnectFixCandidateId: String? = null
+
+    /** 시스템 상태를 마지막으로 읽은 시각. 화면이 막 열렸을 때 같은 바인더 호출을 반복하지 않는다 */
+    private var checksReadAt = android.os.SystemClock.elapsedRealtime()
 
     private val _update = MutableStateFlow<UpdateState>(UpdateState.Idle)
     val update: StateFlow<UpdateState> = _update.asStateFlow()
@@ -176,17 +195,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun checkForUpdate(manual: Boolean = true, onChecked: () -> Unit = {}) {
-        if (!BuildConfig.SELF_UPDATE) return
+        val updater = container.updater ?: return
         if (_update.value is UpdateState.Checking || _update.value is UpdateState.Downloading) return
         _update.value = UpdateState.Checking
         viewModelScope.launch {
-            _update.value = runCatching { container.updater.checkLatest() }.fold(
+            _update.value = runCatching { updater.checkLatest() }.fold(
                 onSuccess = { info ->
                     onChecked()
                     if (info != null) UpdateState.Available(info) else UpdateState.UpToDate
                 },
                 onFailure = {
-                    android.util.Log.w("AppUpdater", "update check failed", it)
+                    android.util.Log.w("SelfUpdate", "update check failed", it)
                     UpdateState.Failed("업데이트를 확인하지 못했어요. 인터넷 연결을 확인하세요")
                 },
             )
@@ -209,10 +228,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             is UpdateState.Failed -> return
             else -> return
         }
+        val updater = container.updater ?: return
         _update.value = UpdateState.Downloading(info, 0f)
         viewModelScope.launch {
             _update.value = runCatching {
-                container.updater.download(info) { p -> _update.value = UpdateState.Downloading(info, p) }
+                updater.download(info) { p -> _update.value = UpdateState.Downloading(info, p) }
             }.fold(
                 onSuccess = { UpdateState.Ready(info, it) },
                 onFailure = { UpdateState.Failed(it.message ?: "내려받지 못했어요") },
@@ -226,18 +246,20 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun installReady() {
         val ready = _update.value as? UpdateState.Ready ?: return
-        if (!container.updater.canInstall()) {
+        val updater = container.updater ?: return
+        if (!updater.canInstall()) {
             awaitingInstallPermission = true
-            container.updater.openInstallPermissionSettings()
+            updater.openInstallPermissionSettings()
             return
         }
         awaitingInstallPermission = false
-        runCatching { container.updater.install(ready.file) }
+        runCatching { updater.install(ready.file) }
     }
 
     fun refreshChecks() {
         _checks.value = SystemChecks.read(app, container.pressure.hasBarometer)
-        if (awaitingInstallPermission && container.updater.canInstall()) installReady()
+        checksReadAt = android.os.SystemClock.elapsedRealtime()
+        if (awaitingInstallPermission && container.updater?.canInstall() == true) installReady()
     }
 
     /** 자동 표시로 열리지 않은 후보를 사용자가 앱을 열 때 한 번만 올린다(닫으면 다시 올리지 않음) */
@@ -248,15 +270,21 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
      * 오래된 후보는 정리하며, 아직 보여 주지 않은 하차 후보가 있으면 패널을 연다.
      */
     fun onForeground() {
-        refreshChecks()
+        // ViewModel을 막 만든 직후(init에서 방금 읽음)에는 메인 스레드 바인더 호출을 반복하지 않는다
+        if (android.os.SystemClock.elapsedRealtime() - checksReadAt > 1_000L) refreshChecks()
         viewModelScope.launch {
             val s = settings.value ?: container.settings.current()
             val address = s.registeredVehicleAddress ?: return@launch
             val now = System.currentTimeMillis()
             container.parking.expireStaleCandidates(address, now, STALE_CANDIDATE_MS)
-            VehicleLink.isConnected(app, address)?.let { connected ->
-                // 연결로 바뀐 것을 늦게 알았으면 지금부터 운전 시간을 센다
-                if (connected != s.vehicleConnected) container.settings.setVehicleLink(connected, if (connected) now else 0L)
+            // 프로필 연결 조회는 메인 스레드 밖에서(화면이 막 열리는 동안 첫 프레임을 막지 않게)
+            withContext(Dispatchers.Default) { VehicleLink.isConnected(app, address) }?.let { connected ->
+                // 연결로 바뀐 것을 늦게 알았으면 지금부터 운전 시간을 센다.
+                // 방금(30초 안) 받은 연결 이벤트는 오디오 프로필이 아직 안 붙었을 수 있어 ‘끊김’으로 덮지 않는다
+                val freshConnect = s.vehicleConnected && now - s.lastVehicleEventAt in 0 until LINK_GRACE_MS
+                if (connected != s.vehicleConnected && (connected || !freshConnect)) {
+                    container.settings.setVehicleLink(connected, if (connected) now else 0L)
+                }
             }
             if (_drawer.value.open) return@launch
             val pending = container.parking.pendingCandidate.first() ?: return@launch
@@ -268,12 +296,35 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     // ── 자동 진입 ──────────────────────────────────────────────
 
+    /**
+     * 자동 진입 패널을 여는 중. MainActivity.onCreate가 setContent 전에 handleEntry를 부르므로
+     * 첫 화면 구성 때 이미 true다. 이 동안 홈은 무거운 지도 생성을 잠깐 미룬다.
+     */
+    private val _entryPending = MutableStateFlow(false)
+    val entryPending: StateFlow<Boolean> = _entryPending.asStateFlow()
+    private val autoEntryPending = MutableStateFlow(false)
+
+    /** 잠금 화면 위 표시·화면 켜기: 자동 진입을 여는 중이거나 자동 진입 패널이 떠 있는 동안만 */
+    val lockScreenEntry: Flow<Boolean>
+        get() = combine(autoEntryPending, drawer) { pending, d -> pending || (d.open && d.autoEntry) }.distinctUntilChanged()
+
     fun handleEntry(candidateId: String?, openPanel: Boolean, autoEntry: Boolean) {
         if (candidateId == null || !openPanel) return
-        viewModelScope.launch { openCandidate(candidateId, autoEntry) }
+        _entryPending.value = true
+        if (autoEntry) autoEntryPending.value = true
+        viewModelScope.launch {
+            try {
+                openCandidate(candidateId, autoEntry)
+            } finally {
+                _entryPending.value = false
+                autoEntryPending.value = false
+            }
+        }
     }
 
     private suspend fun openCandidate(candidateId: String, autoEntry: Boolean) {
+        // 저장 중인 패널은 저장이 끝날 때까지 다른 패널로 바꾸지 않는다
+        if (_drawer.value.saving) return
         val candidate = container.parking.candidate(candidateId) ?: return
         if (candidate.status != CandidateStatus.READY) return
         surfacedCandidateId = candidateId
@@ -285,22 +336,35 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             statusBarOn = nearHome(candidate.latitude, candidate.longitude),
             autoEntry = autoEntry,
         )
+        // 하차 위치는 패널과 별도 작업으로 끝까지 받는다. 저장·닫기로 drawerJob이 취소돼도 위치는 기록에 남는다
+        val locating = captureDisconnectLocation(candidate)
         // 추천 계산이 늦어도 패널은 먼저 연다
         drawerJob?.cancel()
         drawerJob = viewModelScope.launch {
-            var current: CandidateEntity = candidate
-            applyRecommendation(container.parking.recommendationFor(current, container.pressure.hasBarometer))
-            val ageMs = System.currentTimeMillis() - current.detectedAt
-            if (current.latitude == null && ageMs < LOCATION_ATTACH_WINDOW_MS) {
-                container.location.currentFix()?.let { fix ->
-                    container.parking.attachLocation(candidateId, fix)
-                    current = container.parking.candidate(candidateId) ?: current
+            applyRecommendation(container.parking.recommendationFor(candidate, container.pressure.hasBarometer))
+            if (locating != null) {
+                // drawerJob이 취소되면 기다림만 멈추고 위치 작업(appScope)은 계속된다
+                locating.join()
+                val current = container.parking.candidate(candidateId) ?: candidate
+                if (current.latitude != null) {
                     applyHomeDefault(current.latitude, current.longitude)
                     applyRecommendation(container.parking.recommendationFor(current, container.pressure.hasBarometer))
                 }
             }
             _drawer.update { it.copy(recommendationPending = false) }
         }
+    }
+
+    /** 해제 직후 위치를 한 번 받아 후보(또는 이미 저장된 기록)에 붙인다. 같은 후보의 진행 중 작업은 재사용한다 */
+    private fun captureDisconnectLocation(candidate: CandidateEntity): Job? {
+        if (candidate.latitude != null) return null
+        if (System.currentTimeMillis() - candidate.detectedAt >= LOCATION_ATTACH_WINDOW_MS) return null
+        disconnectFixJob?.takeIf { it.isActive && disconnectFixCandidateId == candidate.id }?.let { return it }
+        disconnectFixCandidateId = candidate.id
+        return container.appScope.launch {
+            val fix = container.location.currentFix() ?: return@launch
+            container.parking.attachLocation(candidate.id, fix)
+        }.also { disconnectFixJob = it }
     }
 
     private fun applyRecommendation(rec: FloorRecommendation) {
@@ -326,6 +390,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     // ── 패널 ──────────────────────────────────────────────────
 
     fun openFromFloorCard() {
+        if (_drawer.value.saving) return
         viewModelScope.launch {
             val candidate = pendingCandidate.value
             if (candidate != null) {
@@ -353,12 +418,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // 저장 중에는 이미 기록한 값과 화면이 어긋나지 않게 패널 입력을 받지 않는다
     fun selectLevel(level: Int) {
-        _drawer.update { it.copy(selectedLevel = level, userTouched = true) }
+        _drawer.update { if (it.saving) it else it.copy(selectedLevel = level, userTouched = true) }
     }
 
     fun setDrawerStatusBar(on: Boolean) {
-        _drawer.update { it.copy(statusBarOn = on, statusBarTouched = true) }
+        _drawer.update { if (it.saving) it else it.copy(statusBarOn = on, statusBarTouched = true) }
     }
 
     /** 닫기: 후보를 확정하지 않고 기존 확정 기록을 유지한다 */
@@ -367,6 +433,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun closeDrawer() {
+        if (_drawer.value.saving) return
         drawerJob?.cancel()
         _drawer.update { DrawerUiState() }
     }
@@ -392,20 +459,31 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         // 저장 버튼은 명시적인 확인이므로, 아직 릴을 움직이지 않았으면 띠에 있는 층으로 저장한다
         val level = state.selectedLevel ?: state.centerLevel ?: return
         if (state.saving) return
-        _drawer.update { it.copy(saving = true) }
+        // 띠에 있던 층으로 저장하는 경우에도 선택값을 저장한 층으로 맞춰, 저장 중 릴·표지판이 기록과 같은 층을 가리키게 한다
+        _drawer.update { it.copy(saving = true, selectedLevel = level) }
         drawerJob?.cancel()
+        val vehicleId = settings.value?.registeredVehicleAddress
         viewModelScope.launch {
-            val manualFix = if (state.target == DrawerTarget.Manual) container.location.currentFix(5_000L) else null
-            val saved = container.parking.confirm(
-                target = state.target,
-                floorLevel = level,
-                photoPath = null,
-                manualFix = manualFix,
-                vehicleId = settings.value?.registeredVehicleAddress,
-                statusBar = state.statusBarOn,
-            )
-            withContext(Dispatchers.Default) { StatusBarNotifier.refresh(app) }
-            _drawer.value = DrawerUiState()
+            // 기록은 바로 남긴다. 화면이 닫히거나 앱이 정리돼도 끝까지 쓰도록 앱 범위에서 실행한다
+            container.appScope.async {
+                val manualFix = if (state.target == DrawerTarget.Manual) container.location.currentFix(5_000L) else null
+                container.parking.confirm(
+                    target = state.target,
+                    floorLevel = level,
+                    photoPath = null,
+                    manualFix = manualFix,
+                    vehicleId = vehicleId,
+                    statusBar = state.statusBarOn,
+                )
+                withContext(Dispatchers.Default) { StatusBarNotifier.refresh(app) }
+            }.await()
+            // 잠금 화면 위에서 닫자마자 백그라운드가 되면 위치를 못 받을 수 있어, 진행 중인 하차 위치를 잠깐(최대 2초)
+            // 화면을 띄운 채 기다린다. 위치는 도착하는 대로 저장된 기록에 채워진다(attachLocation)
+            val candidateId = (state.target as? DrawerTarget.Candidate)?.candidateId
+            disconnectFixJob?.takeIf { candidateId != null && it.isActive && disconnectFixCandidateId == candidateId }
+                ?.let { job -> kotlinx.coroutines.withTimeoutOrNull(2_000L) { job.join() } }
+            // 이 저장의 패널만 닫는다
+            _drawer.update { if (it.saving && it.target == state.target) DrawerUiState() else it }
         }
     }
 
@@ -488,5 +566,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         private const val LOCATION_ATTACH_WINDOW_MS = 3 * 60 * 1000L
         /** 이보다 오래 기록하지 않은 하차 후보는 지난 주차로 보고 정리한다 */
         private const val STALE_CANDIDATE_MS = 12 * 60 * 60 * 1000L
+
+        /** 연결 이벤트 직후 오디오 프로필이 붙기까지 기다려 주는 시간 */
+        private const val LINK_GRACE_MS = 30_000L
     }
 }

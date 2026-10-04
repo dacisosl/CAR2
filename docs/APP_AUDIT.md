@@ -45,3 +45,20 @@
 - 사이드바 상태바 스위치 켜고 저장 → 상태바에 B2 표지판 표시.
 - 설정 4개 메뉴, 저장 버튼 활성/비활성, 집 위치 등록·저장, 위치 저장 아이콘.
 - 디자인 설정 펼침, 포레스트 적용.
+
+## Google Play 제출 점검 (2026-10-04, 0.3.11 기준 · 0.3.12 준비 중)
+
+앱 코드는 고치지 않고(다른 작업이 0.3.12를 수정 중) 빌드 결과물·병합 매니페스트·소스를 읽어 확인했다. 자세한 응답과 체크리스트는 `store/PLAY_CONSOLE_CHECKLIST.md`.
+
+| # | 문제 | 심각도 | 상태 |
+|---|---|---|---|
+| 19 | `app/build/outputs/bundle/playRelease/app-play-release.aab`가 0.3.11(versionCode 14)이고 **서명 없음**(META-INF 서명 파일 없음). `android/keystore.properties` 없음 | 높음(제출 불가) | ⏸ 사용자가 업로드 키를 만든 뒤 0.3.12로 다시 빌드. `python tools/check_play_bundle.py`로 확인 |
+| 20 | play AAB dex에 비활성 GitHub 자체 업데이트 코드(`AppUpdater`: `api.github.com` 릴리스 조회, APK 내려받기, `application/vnd.android.package-archive` 설치 인텐트)가 남아 있음. `SELF_UPDATE=false`라 실행되지 않고 `REQUEST_INSTALL_PACKAGES`도 없지만 Play 자동 검사(Play 밖 자체 업데이트 금지)에 걸릴 수 있음 | 중간 | ✅ 0.3.12: `AppUpdater`를 `src/github/`로 옮기고 main에는 `SelfUpdater` 인터페이스만, play에는 null을 돌려주는 `SelfUpdaters`를 둠. play 디버그 APK dex에서 `api.github.com`·APK 설치 MIME·`MANAGE_UNKNOWN_APP_SOURCES` 0건 확인 |
+| 21 | 업로드 키 안내가 `storeFile=../upload-key.jks`(저장소 루트)였는데 루트 `.gitignore`는 `*.jks`를 무시하지 않음 → 공개 저장소에 키가 올라갈 수 있음 | 중간 | ✅ 안내를 저장소 밖 경로(`%USERPROFILE%\keys\`)로 변경. 0.3.12에서 루트 `.gitignore`에 `*.jks`·`*.keystore`·`keystore.properties`·`local.properties` 추가 |
+| 22 | 스토어 아이콘이 24비트 PNG(RGB). Play 규격은 32비트 PNG | 낮음 | ✅ 같은 픽셀로 RGBA 저장(`tools/store_assets.py`도 RGBA로 저장하게 수정) |
+| 23 | 스크린샷·그래픽 이미지가 실제 Play 앱과 다름: ‘지도 미연결’ 안내(02·04·그래픽), ‘4가지 디자인’(01·05), play 빌드에 없는 ‘업데이트 확인’ 버튼과 0.3.3 표시(05) | 낮음 | ✅ 01 인포그래픽을 ‘5가지 디자인(UHD)’으로 다시 만듦. 02~06·그래픽 이미지를 0.3.12 play 빌드 실제 캡처로 다시 만듦(포레스트, B2, 서울역 좌표) |
+| 24 | 데이터 보안 초안이 ‘지도 키 없는 빌드’ 기준이었으나 현재 빌드 환경에는 지도 키가 있어 네이버 지도 SDK가 지도 영역·기기 정보를 네이버로 보냄. SDK 안에 네이버 로그 수집 주소(`nelo.navercorp.com`)도 있음 | 중간 | ✅ `store/DATA_SAFETY.md`를 위치(대략·정확)·진단 ‘수집, 공유 안 함’으로 보수적으로 다시 작성. 네이버클라우드 문의로 확정 권장 |
+| 25 | 개인정보처리방침에 잠금 화면 층수 표시, 네이버 SDK 전달 항목, GitHub 판 업데이트 확인, 기압 측정 시점, 보관·삭제 방법, 개발자 표기, 영문 요약이 빠짐 | 낮음 | ✅ `docs/PRIVACY_POLICY.md` 보완. 커밋·푸시해야 공개 URL에 반영 |
+| 26 | 0.3.12 사용자 제공 영상 `res/raw/parking_reverse.mp4`와 `parking_first/last.webp`가 APK와 공개 저장소에 포함됨 | 중간 | ⏸ 사용자 권리 확인 필요(직접 제작·상업적 이용·재배포 허용). 프레임에 제조사 엠블럼·글자 없음 확인 |
+
+정상 확인: play 병합 매니페스트에 `REQUEST_INSTALL_PACKAGES`, `ACCESS_BACKGROUND_LOCATION`, 포그라운드 서비스, `USE_FULL_SCREEN_INTENT`, `QUERY_ALL_PACKAGES`, 정확한 알람, `READ_MEDIA_*`, `AD_ID` 없음. targetSdk 36(2026-08-31 요건 충족). 카메라는 시스템 카메라 앱만 사용(카메라 권한 없음). 위치는 화면이 보일 때만 요청. 광고·분석 SDK 없음. 개인정보처리방침 URL 공개 접근(200) 확인.

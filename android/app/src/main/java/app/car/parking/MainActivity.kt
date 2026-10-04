@@ -12,9 +12,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import app.car.parking.platform.autolaunch.AutoLauncher
 import app.car.parking.ui.AppViewModel
@@ -32,11 +29,10 @@ class MainActivity : ComponentActivity() {
         )
         if (savedInstanceState == null) handleEntry(intent)
         setContent { CarRoot(viewModel, onUnlockThen = ::unlockThen) }
-        // 잠금 화면 위 표시는 자동 진입으로 열린 패널이 떠 있는 동안만 유지한다
+        // 잠금 화면 위 표시는 자동 진입을 여는 중이거나 자동 진입 패널이 떠 있는 동안만 유지한다.
+        // 후보가 이미 처리돼 패널이 열리지 않으면 바로 꺼진다
         lifecycleScope.launch {
-            viewModel.drawer.map { it.open && it.autoEntry }.distinctUntilChanged().drop(1).collect { shown ->
-                setLockScreenEntry(shown)
-            }
+            viewModel.lockScreenEntry.collect(::setLockScreenEntry)
         }
     }
 

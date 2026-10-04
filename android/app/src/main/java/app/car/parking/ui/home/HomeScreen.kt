@@ -58,6 +58,8 @@ import app.car.parking.ui.VehicleStatus
 import app.car.parking.ui.theme.cardSurface
 import app.car.parking.ui.theme.primarySurface
 import kotlinx.coroutines.delay
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 
 @Composable
 fun HomeScreen(
@@ -72,6 +74,8 @@ fun HomeScreen(
     onTakePhoto: () -> Unit,
     locationSave: LocationSaveStatus,
     onSaveLocation: () -> Unit,
+    /** 자동 진입 패널이 먼저 그려지도록 무거운 지도 생성을 잠깐 미룬다 */
+    deferMap: Boolean = false,
 ) {
     val t = LocalCarTokens.current
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -122,9 +126,13 @@ fun HomeScreen(
                     if (t.dial && record != null && driving == null) ElapsedDial(now - record.detectedAt)
                 }
                 Spacer(Modifier.height(16.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    FloorCard(record, onOpenFloor, Modifier.weight(1f))
-                    VehicleCard(record != null, record?.photoPath, onOpenPhoto, onTakePhoto, Modifier.weight(1f))
+                // 두 카드는 항상 같은 높이: 더 큰 쪽 내용 높이(최소 124dp)에 맞춘다. 사진 유무·로딩·글자 크기와 무관
+                Row(
+                    Modifier.height(IntrinsicSize.Min),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    FloorCard(record, onOpenFloor, Modifier.weight(1f).fillMaxHeight())
+                    VehicleCard(record != null, record?.photoPath, onOpenPhoto, onTakePhoto, Modifier.weight(1f).fillMaxHeight())
                 }
                 Spacer(Modifier.height(20.dp))
                 if (record != null) {
@@ -167,9 +175,13 @@ fun HomeScreen(
                 }
                 Spacer(Modifier.height(16.dp))
             }
+            val exited = vehicleStatus as? VehicleStatus.Exited
             ParkingMap(
                 record = record,
                 location = location,
+                pendingLat = exited?.latitude,
+                pendingLng = exited?.longitude,
+                deferHost = deferMap,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()

@@ -13,6 +13,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
+/** 연결 이벤트 순서 판단에 쓰는 시간 창. 이보다 크게 어긋나면 시계가 바뀐 것으로 보고 새 이벤트를 받는다 */
+private const val ORDER_WINDOW_MS = 60_000L
+
 /** 설정에서 고르는 5가지 디자인. 저장 키는 바꾸지 않는다(이전 ‘classic’은 그래파이트로 이어진다) */
 enum class AppThemeId(val key: String) {
     Graphite("graphite"), Forest("forest"), Espresso("espresso"), Silver("steel"), Uhd("uhd");
@@ -80,7 +83,11 @@ class SettingsStore(private val context: Context) {
         val homeLng = doublePreferencesKey("homeLongitude")
     }
 
-    val settings: Flow<AppSettings> = context.dataStore.data.map { it.toSettings() }
+    /** 이 프로세스에서 마지막으로 읽은 설정(수신기가 이미 읽었으면 채워져 있다). 첫 프레임 초기값 전용 */
+    @Volatile var cached: AppSettings? = null
+        private set
+
+    val settings: Flow<AppSettings> = context.dataStore.data.map { it.toSettings().also { s -> cached = s } }
 
     suspend fun current(): AppSettings = settings.first()
 
@@ -120,6 +127,10 @@ class SettingsStore(private val context: Context) {
     /** 차량 연결 상태. [atMs]가 0이면 이벤트 시각은 바꾸지 않는다(실제 상태 재확인) */
     suspend fun setVehicleLink(connected: Boolean, atMs: Long = 0L) {
         context.dataStore.edit {
+            // 조금 더 최근 이벤트가 이미 저장돼 있으면 늦게 도착한 이전 이벤트로 덮지 않는다.
+            // 차이가 크면(시계가 뒤로 맞춰진 경우 등) 순서 판단에 쓰지 않고 새 이벤트를 받는다
+            val stored = it[Keys.lastVehicleEventAt] ?: 0L
+            if (atMs > 0L && atMs < stored && stored - atMs < ORDER_WINDOW_MS) return@edit
             it[Keys.vehicleConnected] = connected
             if (atMs > 0L) it[Keys.lastVehicleEventAt] = atMs
         }

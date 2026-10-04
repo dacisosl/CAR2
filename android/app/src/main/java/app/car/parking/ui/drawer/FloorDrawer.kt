@@ -3,6 +3,7 @@ package app.car.parking.ui.drawer
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.rememberSplineBasedDecay
+import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -12,6 +13,7 @@ import androidx.compose.foundation.gestures.snapping.SnapPosition
 import androidx.compose.foundation.gestures.snapping.SnapLayoutInfoProvider
 import androidx.compose.foundation.gestures.snapping.snapFlingBehavior
 import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.stopScroll
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +24,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -46,6 +49,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -118,8 +122,10 @@ fun FloorDrawer(
         val screenWidth = maxWidth
         val screenHeight = maxHeight
         val fontScale = density.fontScale.coerceIn(1f, 1.3f)
-        // 약 200~216dp, 화면 폭의 60% 이내. 큰 글자에서는 필요한 폭을 더 확보한다
-        val panelWidth = minOf(216.dp * fontScale, screenWidth * 0.6f).coerceAtLeast(184.dp)
+        // 왼쪽 릴 + 오른쪽 주차 장면. 화면 폭의 90%(최대 400dp), 바깥을 눌러 닫을 자리는 남긴다
+        val panelWidth = minOf(400.dp * fontScale, screenWidth * 0.9f)
+        // 40sp 층 글자(가장 긴 ‘10F’·‘B10’) + 띠 여백. 남는 폭은 주차 장면에 준다
+        val reelWidth = 100.dp * fontScale
         val panelWidthPx = with(density) { panelWidth.toPx() }
         val screenPx = with(density) { screenWidth.toPx() }
         val dragX = remember(side) { Animatable(0f) }
@@ -248,12 +254,28 @@ fun FloorDrawer(
                     modifier = Modifier.padding(bottom = 8.dp),
                 )
 
-                FloorReel(
-                    selected = state.selectedLevel,
-                    onSelect = onSelect,
-                    onCenter = onCenter,
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                )
+                // 왼쪽 층수 릴, 오른쪽 주차 장면. 장면은 릴 가운데 띠와 같은 높이에 둔다.
+                // 열린 패널이 다른 기록(새 하차 후보 등)으로 바뀌면 릴과 장면을 처음부터 다시 만든다
+                key(state.target) {
+                    Row(
+                        Modifier.weight(1f).fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        FloorReel(
+                            selected = state.selectedLevel,
+                            onSelect = onSelect,
+                            onCenter = onCenter,
+                            enabled = !state.saving,
+                            modifier = Modifier.width(reelWidth).fillMaxHeight(),
+                        )
+                        ParkingScene(
+                            level = state.selectedLevel,
+                            fromUser = state.userTouched,
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                        )
+                }
+                }
 
                 // 상태바 스위치 + 작은 저장 버튼, 한 행 두 열. 둘 다 패널 안
                 Row(
@@ -341,7 +363,13 @@ private fun recommendationText(state: DrawerUiState): String {
  * 릴 스크롤은 층수만 바꾸고 패널 이동 제스처와 분리되어 있다.
  */
 @Composable
-fun FloorReel(selected: Int?, onSelect: (Int) -> Unit, onCenter: (Int) -> Unit = {}, modifier: Modifier = Modifier) {
+fun FloorReel(
+    selected: Int?,
+    onSelect: (Int) -> Unit,
+    onCenter: (Int) -> Unit = {},
+    enabled: Boolean = true,
+    modifier: Modifier = Modifier,
+) {
     val t = LocalCarTokens.current
     val haptic = LocalHapticFeedback.current
     val levels = remember { Floors.reel() }
@@ -380,6 +408,14 @@ fun FloorReel(selected: Int?, onSelect: (Int) -> Unit, onCenter: (Int) -> Unit =
             levels.getOrNull(centerIndex)?.let(onSelect)
         }
     }
+    // 저장 중(enabled=false)에는 흐르던 릴을 멈추고 저장한 층으로 돌려 둔다. 띠와 기록이 어긋나지 않게
+    LaunchedEffect(enabled) {
+        if (enabled) return@LaunchedEffect
+        listState.stopScroll(MutatePriority.PreventUserInput)
+        userDragging = false // 되돌아가는 동안 층 넘김 진동·선택을 내지 않는다
+        val index = selected?.let { levels.indexOf(it) }?.takeIf { it >= 0 } ?: centerIndex
+        listState.glideTo(index)
+    }
     // 추천·기존 기록 등 외부 선택 변경을 릴에 반영
     LaunchedEffect(selected) {
         val index = selected?.let { levels.indexOf(it) } ?: return@LaunchedEffect
@@ -414,6 +450,8 @@ fun FloorReel(selected: Int?, onSelect: (Int) -> Unit, onCenter: (Int) -> Unit =
             state = listState,
             contentPadding = PaddingValues(vertical = pad),
             flingBehavior = flingBehavior,
+            // 저장 중에는 이미 기록한 층과 어긋나지 않게 돌리지 않는다
+            userScrollEnabled = enabled,
             modifier = Modifier.fillMaxSize(),
         ) {
             itemsIndexed(levels, key = { _, level -> level }) { index, level ->
@@ -436,7 +474,7 @@ fun FloorReel(selected: Int?, onSelect: (Int) -> Unit, onCenter: (Int) -> Unit =
                                 )
                             }
                         }
-                        .clickable(role = Role.Button) {
+                        .clickable(enabled = enabled, role = Role.Button) {
                             onSelect(level)
                             haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
                             scope.launch { listState.glideTo(index) }

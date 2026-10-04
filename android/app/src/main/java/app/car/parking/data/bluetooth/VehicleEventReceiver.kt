@@ -9,7 +9,6 @@ import android.content.Intent
 import android.os.Build
 import android.util.Log
 import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.ProcessLifecycleOwner
 import app.car.parking.CarApp
 import app.car.parking.platform.autolaunch.AutoLauncher
 import kotlinx.coroutines.CoroutineScope
@@ -18,7 +17,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
  * 등록 차량의 ACL 연결/해제 수신. ACL_CONNECTED/DISCONNECTED는 매니페스트 수신기 허용 예외라
@@ -59,19 +57,19 @@ class VehicleEventReceiver : BroadcastReceiver() {
                             return@launch
                         }
                         val window = settings.reconnectCheckMs.coerceIn(1_000L, MAX_WINDOW_MS)
-                        val candidate = app.container.parking.beginCandidate(registered, now, null, window)
+                        // 연결 상태 저장(디스크 동기화)은 후보 생성과 나란히. 이벤트 시각 비교라 늦게 끝나도 재연결 상태를 덮지 않는다.
+                        // 별도 범위(SupervisorJob)의 async라 저장이 실패해도 이 작업을 취소하지 않고, 아래 await에서 잡아 기록한다
+                        val linkWrite = scope.async { app.container.settings.setVehicleLink(connected = false, atMs = now) }
+                        // 표시 대상(READY)으로 바로 만든다: 확인 단계 없이 쓰기 한 번 뒤 곧바로 화면 실행
+                        val candidate = app.container.parking.beginCandidate(registered, now, null, window, ready = true)
                         if (candidate == null) {
                             Log.i(TAG, "duplicate disconnect merged into existing candidate")
                         } else {
-                            // 바로 표시 대상으로 바꾸고 앱을 띄운다
-                            app.container.parking.finishReconnectCheck(candidate.id)
-                            val wasBackground = withContext(Dispatchers.Main) {
-                                !ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
-                            }
-                            val launched = AutoLauncher.launchCandidate(app, candidate.id, wasBackground)
+                            val launched = AutoLauncher.launchCandidate(app, candidate.id)
                             Log.i(TAG, "vehicle disconnected — candidate ${candidate.id} shown immediately, launch=$launched")
                             app.container.appScope.launch { verifyAfterLaunch(app, registered, candidate.id, window) }
                         }
+                        linkWrite.await()
                     }
                 }
             } catch (t: Throwable) {
@@ -88,16 +86,17 @@ class VehicleEventReceiver : BroadcastReceiver() {
         val pressure = scope.async { container.pressure.sample(windowMs = minOf(1_500L, checkMs), timeoutMs = checkMs + 500L) }
         delay(checkMs)
         pressure.await()?.let { reading ->
-            container.db.dao().candidate(candidateId)?.let {
-                container.db.dao().upsertCandidate(it.copy(pressureHpa = reading.hpa, pressureAt = reading.measuredAtMs))
-            }
+            // 좌표·상태를 덮어쓰지 않도록 기압 열만 갱신한다(위치 첨부·저장과 동시에 일어날 수 있음)
+            container.db.dao().setCandidatePressure(candidateId, reading.hpa, reading.measuredAtMs)
         }
         if (bluetoothTurningOff(app)) return
-        // 시동만 껐다 켠 경우: 차량이 다시 연결돼 있으면 주차가 아니다(연결 이벤트를 놓쳤을 때의 보정)
+        // 시동만 껐다 켠 경우: 차량이 다시 연결돼 있으면 주차가 아니다(연결 이벤트를 놓쳤을 때의 보정).
+        // 조회 시작 시각으로 기록해, 조회하는 동안 다시 끊긴 이벤트가 이 결과보다 나중으로 남게 한다
+        val queriedAt = System.currentTimeMillis()
         if (VehicleLink.isConnected(app, address, LINK_QUERY_MS) == true) {
             Log.i(TAG, "vehicle reconnected within check window — candidate cancelled")
             container.parking.cancelCandidate(candidateId)
-            container.settings.setVehicleLink(connected = true, atMs = System.currentTimeMillis())
+            container.settings.setVehicleLink(connected = true, atMs = queriedAt)
         }
     }
 

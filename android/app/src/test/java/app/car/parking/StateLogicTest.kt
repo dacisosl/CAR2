@@ -9,7 +9,7 @@ import app.car.parking.platform.permissions.AutoRecordState
 import app.car.parking.platform.permissions.Readiness
 import app.car.parking.platform.permissions.SystemChecks
 import app.car.parking.ui.home.elapsedText
-import app.car.parking.platform.update.AppUpdater
+import app.car.parking.platform.update.VersionOrder
 import app.car.parking.ui.theme.ElapsedTone
 import app.car.parking.domain.parking.ParkingRepository
 import org.junit.Assert.assertEquals
@@ -129,11 +129,11 @@ class ElapsedTextTest {
 class UpdateVersionTest {
     @Test
     fun comparesVersions() {
-        assertTrue(AppUpdater.isNewer("0.3.1", "0.3.0"))
-        assertTrue(AppUpdater.isNewer("0.10.0", "0.9.9"))
-        assertTrue(AppUpdater.isNewer("1.0", "0.9.9"))
-        assertEquals(false, AppUpdater.isNewer("0.3.1", "0.3.1"))
-        assertEquals(false, AppUpdater.isNewer("0.3.0", "0.3.1"))
+        assertTrue(VersionOrder.isNewer("0.3.1", "0.3.0"))
+        assertTrue(VersionOrder.isNewer("0.10.0", "0.9.9"))
+        assertTrue(VersionOrder.isNewer("1.0", "0.9.9"))
+        assertEquals(false, VersionOrder.isNewer("0.3.1", "0.3.1"))
+        assertEquals(false, VersionOrder.isNewer("0.3.0", "0.3.1"))
     }
 }
 

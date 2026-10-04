@@ -121,6 +121,37 @@ interface ParkingDao {
     @Query("UPDATE parking_candidate SET status = :status WHERE id = :id")
     suspend fun setCandidateStatus(id: String, status: String)
 
+    /** 좌표 열만, 아직 없을 때만 채운다. 상태·기압을 덮어쓰지 않는다 */
+    @Query(
+        "UPDATE parking_candidate SET latitude = :lat, longitude = :lng, locationAccuracyMeters = :accuracy, " +
+            "locationCapturedAt = :capturedAt, locationSource = :source WHERE id = :id AND latitude IS NULL"
+    )
+    suspend fun setCandidateLocation(id: String, lat: Double, lng: Double, accuracy: Float?, capturedAt: Long, source: String): Int
+
+    /** 기압 열만 갱신한다. 좌표·상태를 덮어쓰지 않는다 */
+    @Query("UPDATE parking_candidate SET pressureHpa = :hpa, pressureAt = :at WHERE id = :id")
+    suspend fun setCandidatePressure(id: String, hpa: Float, at: Long)
+
+    /** 위치보다 저장이 먼저 끝난 하차 기록에 좌표를 채운다. 이미 좌표(직접 저장 등)가 있으면 건드리지 않는다 */
+    @Query(
+        "UPDATE parking_record SET latitude = :lat, longitude = :lng, locationAccuracyMeters = :accuracy, " +
+            "locationCapturedAt = :capturedAt, locationSource = :source " +
+            "WHERE vehicleId = :vehicleId AND detectedAt = :detectedAt AND detectionSource = :detection AND latitude IS NULL"
+    )
+    suspend fun fillRecordLocation(
+        vehicleId: String,
+        detectedAt: Long,
+        detection: String,
+        lat: Double,
+        lng: Double,
+        accuracy: Float?,
+        capturedAt: Long,
+        source: String,
+    ): Int
+
+    @Query("UPDATE floor_reference SET latitude = :lat, longitude = :lng WHERE measuredAt = :measuredAt AND latitude IS NULL")
+    suspend fun fillReferenceLocation(measuredAt: Long, lat: Double, lng: Double): Int
+
     @Insert
     suspend fun insertReference(reference: FloorReferenceEntity)
 

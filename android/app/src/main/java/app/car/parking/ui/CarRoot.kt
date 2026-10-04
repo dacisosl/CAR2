@@ -102,7 +102,8 @@ fun CarRoot(viewModel: AppViewModel, onUnlockThen: (() -> Unit) -> Unit) {
         val actions = rememberSystemActions(viewModel::refreshChecks)
         // 홈 카드와 사진 모달(다시 찍기)이 같은 촬영 흐름을 쓴다
         val takePhoto = rememberTakePhoto(onUnlockThen, viewModel::attachPhoto)
-        when (screen) {
+        // 자동 진입 패널은 설정·첫 시작 화면에 있었더라도 같은 프레임에 홈 위에 연다
+        when (if (drawer.open) Screen.Home else screen) {
             Screen.Onboarding -> OnboardingScreen(
                 settings = settings,
                 checks = checks,
@@ -130,7 +131,10 @@ fun CarRoot(viewModel: AppViewModel, onUnlockThen: (() -> Unit) -> Unit) {
                 val record = (recordState as? RecordState.Loaded)?.record
                 val location = rememberCurrentLocation(checks.anyLocation)
                 Box(Modifier.fillMaxSize()) {
+                    // 자동 진입으로 홈이 처음 그려질 때는 패널을 먼저 보여 주고 지도는 잠깐 뒤에 만든다
+                    val deferMap = remember { viewModel.entryPending.value || (drawer.open && drawer.autoEntry) }
                     HomeScreen(
+                        deferMap = deferMap,
                         record = record,
                         readiness = readiness,
                         vehicleStatus = vehicleStatus,
@@ -235,7 +239,8 @@ private fun rememberCurrentLocation(permitted: Boolean): CurrentLocationState {
                 state = CurrentLocationState.Unavailable(UnavailableReason.LocationOff)
                 return@repeatOnLifecycle
             }
-            if (lastFix == null) state = CurrentLocationState.Locating
+            // 다시 앞으로 왔을 때 지난 세션의 좌표를 현재 위치로 쓰지 않는다(2분이 지난 좌표는 Stale)
+            state = lastFix?.let { CurrentLocationState.classify(it, System.currentTimeMillis()) } ?: CurrentLocationState.Locating
             launch {
                 // 일정 시간 좌표가 없으면 위치 없음, 오래된 좌표는 Stale로 낮춘다
                 delay(20_000L)

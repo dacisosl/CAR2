@@ -69,9 +69,10 @@ class ParkingRepository(
         detectedAtMs: Long,
         pressure: PressureReading?,
         dedupWindowMs: Long = AppSettings.DEFAULT_RECONNECT_MS,
+        ready: Boolean = false,
     ): CandidateEntity? =
         candidateLock.withLock {
-            settings.setVehicleLink(connected = false, atMs = detectedAtMs)
+            // 연결 상태 저장(DataStore 디스크 쓰기)은 호출한 쪽이 후보 생성과 나란히 한다
             val active = dao.activeCandidate(vehicleId)
             if (active != null) {
                 if (detectedAtMs - active.detectedAt in 0..dedupWindowMs) return@withLock null
@@ -82,7 +83,7 @@ class ParkingRepository(
                 vehicleId = vehicleId,
                 sessionKey = "$vehicleId@$detectedAtMs",
                 detectedAt = detectedAtMs,
-                status = CandidateStatus.CHECKING,
+                status = if (ready) CandidateStatus.READY else CandidateStatus.CHECKING,
                 pressureHpa = pressure?.hpa,
                 pressureAt = pressure?.measuredAtMs,
                 latitude = null,
@@ -115,18 +116,30 @@ class ParkingRepository(
     }
 
     /** 앱이 표시된 직후의 현재 위치를 후보에 붙인다. 이미 좌표가 있으면 바꾸지 않는다. */
-    suspend fun attachLocation(candidateId: String, fix: Fix) {
-        val current = dao.candidate(candidateId) ?: return
-        if (current.latitude != null || current.status != CandidateStatus.READY) return
-        dao.upsertCandidate(
-            current.copy(
-                latitude = fix.latitude,
-                longitude = fix.longitude,
-                locationAccuracyMeters = fix.accuracyMeters,
-                locationCapturedAt = fix.capturedAtMs,
-                locationSource = LocationSource.AFTER_DISCONNECT,
-            )
+    suspend fun attachLocation(candidateId: String, fix: Fix): Boolean = candidateLock.withLock {
+        val current = dao.candidate(candidateId) ?: return@withLock false
+        if (current.latitude != null) return@withLock false
+        if (current.status != CandidateStatus.READY && current.status != CandidateStatus.CONFIRMED) return@withLock false
+        dao.setCandidateLocation(
+            candidateId, fix.latitude, fix.longitude, fix.accuracyMeters, fix.capturedAtMs, LocationSource.AFTER_DISCONNECT,
         )
+        // 위치가 오기 전에 이미 저장했으면(후보 CONFIRMED) 그 하차로 만든 기록에도 같은 좌표를 채운다
+        if (current.status == CandidateStatus.CONFIRMED) {
+            dao.fillRecordLocation(
+                vehicleId = current.vehicleId,
+                detectedAt = current.detectedAt,
+                detection = DetectionSource.BLUETOOTH,
+                lat = fix.latitude,
+                lng = fix.longitude,
+                accuracy = fix.accuracyMeters,
+                capturedAt = fix.capturedAtMs,
+                source = LocationSource.AFTER_DISCONNECT,
+            )
+            if (current.pressureHpa != null) {
+                dao.fillReferenceLocation(current.pressureAt ?: current.detectedAt, fix.latitude, fix.longitude)
+            }
+        }
+        true
     }
 
     suspend fun recommendationFor(candidate: CandidateEntity, hasBarometer: Boolean): FloorRecommendation {
@@ -151,11 +164,12 @@ class ParkingRepository(
         vehicleId: String?,
         statusBar: Boolean,
         nowMs: Long = System.currentTimeMillis(),
-    ): ParkingRecordEntity? {
+    ): ParkingRecordEntity? = candidateLock.withLock {
+        // attachLocation과 같은 잠금: 저장과 늦게 도착한 하차 위치가 서로를 놓치지 않게 한다
         val record = when (target) {
             is DrawerTarget.Candidate -> {
                 // 패널이 열린 사이 차량이 다시 연결돼 취소된 후보는 기록하지 않는다
-                val candidate = dao.candidate(target.candidateId)?.takeIf { it.status == CandidateStatus.READY } ?: return null
+                val candidate = dao.candidate(target.candidateId)?.takeIf { it.status == CandidateStatus.READY } ?: return@withLock null
                 dao.setCandidateStatus(candidate.id, CandidateStatus.CONFIRMED)
                 if (candidate.pressureHpa != null) {
                     dao.insertReference(
@@ -188,7 +202,7 @@ class ParkingRepository(
                 )
             }
             is DrawerTarget.Edit -> {
-                val existing = dao.latestRecord()?.takeIf { it.id == target.recordId } ?: return null
+                val existing = dao.latestRecord()?.takeIf { it.id == target.recordId } ?: return@withLock null
                 existing.copy(
                     floorLevel = floorLevel,
                     photoPath = photoPath ?: existing.photoPath,
@@ -215,28 +229,29 @@ class ParkingRepository(
             )
         }
         dao.upsertRecord(record)
-        return record
+        record
     }
 
     data class PhotoResult(val attached: Boolean, val previousPath: String?)
 
     /** 홈 차량 카드에서 찍은 사진을 현재 기록에 붙인다 */
-    suspend fun setPhoto(recordId: String, path: String): PhotoResult {
-        val existing = dao.latestRecord()?.takeIf { it.id == recordId } ?: return PhotoResult(false, null)
+    // 사진·위치 수정은 행 전체를 다시 쓰므로, 뒤늦게 채워지는 하차 위치(attachLocation)와 같은 잠금 안에서 한다
+    suspend fun setPhoto(recordId: String, path: String): PhotoResult = candidateLock.withLock {
+        val existing = dao.latestRecord()?.takeIf { it.id == recordId } ?: return@withLock PhotoResult(false, null)
         dao.upsertRecord(existing.copy(photoPath = path))
-        return PhotoResult(true, existing.photoPath)
+        PhotoResult(true, existing.photoPath)
     }
 
     /** 사진 삭제. 화면에 보이던 사진이 아직 이 기록의 사진일 때만 지운다 */
-    suspend fun clearPhoto(recordId: String, path: String): Boolean {
-        val existing = dao.latestRecord()?.takeIf { it.id == recordId && it.photoPath == path } ?: return false
+    suspend fun clearPhoto(recordId: String, path: String): Boolean = candidateLock.withLock {
+        val existing = dao.latestRecord()?.takeIf { it.id == recordId && it.photoPath == path } ?: return@withLock false
         dao.upsertRecord(existing.copy(photoPath = null))
-        return true
+        true
     }
 
     /** 홈의 위치 저장 아이콘. 현재 위치를 이 기록의 주차 위치로 저장한다 */
-    suspend fun setLocation(recordId: String, fix: Fix): ParkingRecordEntity? {
-        val existing = dao.latestRecord()?.takeIf { it.id == recordId } ?: return null
+    suspend fun setLocation(recordId: String, fix: Fix): ParkingRecordEntity? = candidateLock.withLock {
+        val existing = dao.latestRecord()?.takeIf { it.id == recordId } ?: return@withLock null
         val updated = existing.copy(
             latitude = fix.latitude,
             longitude = fix.longitude,
@@ -245,7 +260,7 @@ class ParkingRepository(
             locationSource = LocationSource.SAVED,
         )
         dao.upsertRecord(updated)
-        return updated
+        updated
     }
 
     companion object {

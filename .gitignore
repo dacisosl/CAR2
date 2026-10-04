@@ -1,3 +1,9 @@
 map-style/car-map-icons.zip
 map-style/car-map-icons-18px.zip
 /CAR-parking-*.apk
+
+# 서명 키·비밀값은 저장소 어디에도 올리지 않는다
+*.jks
+*.keystore
+keystore.properties
+local.properties

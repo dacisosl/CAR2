@@ -11,10 +11,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import app.car.parking.data.storage.SettingsStore
 import app.car.parking.domain.parking.ParkingRepository
+import app.car.parking.platform.autolaunch.AutoLauncher
 import app.car.parking.platform.statusbar.StatusBarNotifier
-import app.car.parking.platform.update.AppUpdater
+import app.car.parking.platform.update.SelfUpdater
+import app.car.parking.platform.update.SelfUpdaters
 import app.car.parking.platform.widget.ParkingWidgets
-import com.naver.maps.map.NaverMapSdk
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -27,7 +28,8 @@ class AppContainer(context: Context) {
     val location = LocationRepository(context)
     val pressure = PressureSampler(context)
     val photos = PhotoStore(context)
-    val updater = AppUpdater(context)
+    /** GitHub 배포판만 있다. Play 빌드는 null */
+    val updater: SelfUpdater? = SelfUpdaters.create(context)
 
     /** 화면 수명과 무관하게 끝나야 하는 짧은 작업(자동 표시 테스트 예약 등) */
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -41,6 +43,7 @@ class CarApp : Application() {
         super.onCreate()
         container = AppContainer(this)
         StatusBarNotifier.createChannel(this)
+        AutoLauncher.createChannel(this)
         // 기록·테마가 바뀌면 위젯과 상태바 표시를 함께 맞춘다(저장·위치 저장·사진·테마 변경 포함)
         container.appScope.launch {
             combine(
@@ -53,8 +56,6 @@ class CarApp : Application() {
                     ParkingWidgets.updateAll(this@CarApp)
                 }
         }
-        if (BuildConfig.NAVER_MAP_KEY_ID.isNotBlank()) {
-            NaverMapSdk.getInstance(this).client = NaverMapSdk.NcpKeyClient(BuildConfig.NAVER_MAP_KEY_ID)
-        }
+        // 네이버 지도 SDK 클라이언트는 지도를 처음 만들 때 설정한다(ParkingMap). 수신기만 깨어날 때 비용을 내지 않는다
     }
 }

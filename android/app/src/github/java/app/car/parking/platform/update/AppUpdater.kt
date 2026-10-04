@@ -14,23 +14,19 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 
-data class UpdateInfo(
-    val versionName: String,
-    val apkUrl: String,
-    val sizeBytes: Long,
-    /** GitHub가 제공하는 자산 SHA-256. 있으면 내려받은 파일과 대조한다 */
-    val sha256: String?,
-    val notes: String,
-)
+/** GitHub 배포판의 업데이트 구현. Play 빌드에는 이 파일이 들어가지 않는다(src/play의 SelfUpdaters는 null) */
+object SelfUpdaters {
+    fun create(context: Context): SelfUpdater? = AppUpdater(context)
+}
 
 /**
  * GitHub 릴리스 기반 업데이트 확인. 파일로 설치한 앱은 스스로 업데이트되지 않으므로
  * 최신 릴리스를 확인해 APK를 내려받고 시스템 설치 화면을 연다(설치는 사용자가 확인).
  */
-class AppUpdater(private val context: Context) {
+class AppUpdater(private val context: Context) : SelfUpdater {
 
     /** 최신 릴리스. 현재 버전보다 새것이 아니면 null */
-    suspend fun checkLatest(): UpdateInfo? = withContext(Dispatchers.IO) {
+    override suspend fun checkLatest(): UpdateInfo? = withContext(Dispatchers.IO) {
         val conn = (URL(LATEST_URL).openConnection() as HttpURLConnection).apply {
             connectTimeout = 10_000
             readTimeout = 10_000
@@ -40,7 +36,7 @@ class AppUpdater(private val context: Context) {
             if (conn.responseCode != 200) error("HTTP ${conn.responseCode}")
             val json = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
             val version = json.getString("tag_name").removePrefix("v")
-            if (!isNewer(version, BuildConfig.VERSION_NAME)) return@withContext null
+            if (!VersionOrder.isNewer(version, BuildConfig.VERSION_NAME)) return@withContext null
             val assets = json.getJSONArray("assets")
             val apk = (0 until assets.length()).map { assets.getJSONObject(it) }
                 .firstOrNull { it.getString("name").endsWith(".apk") } ?: return@withContext null
@@ -57,7 +53,7 @@ class AppUpdater(private val context: Context) {
     }
 
     /** 앱 캐시에 내려받는다. 크기·SHA-256·패키지 이름·버전이 맞지 않으면 버린다 */
-    suspend fun download(info: UpdateInfo, onProgress: (Float) -> Unit): File = withContext(Dispatchers.IO) {
+    override suspend fun download(info: UpdateInfo, onProgress: (Float) -> Unit): File = withContext(Dispatchers.IO) {
         val dir = File(context.cacheDir, "updates").apply { mkdirs() }
         dir.listFiles()?.forEach { it.delete() }
         val file = File(dir, "CAR-parking-${info.versionName}.apk")
@@ -105,9 +101,9 @@ class AppUpdater(private val context: Context) {
     }
 
     /** 이 앱이 APK 설치를 요청할 수 있는지(‘출처를 알 수 없는 앱 설치’ 허용) */
-    fun canInstall(): Boolean = context.packageManager.canRequestPackageInstalls()
+    override fun canInstall(): Boolean = context.packageManager.canRequestPackageInstalls()
 
-    fun openInstallPermissionSettings() {
+    override fun openInstallPermissionSettings() {
         runCatching {
             context.startActivity(
                 Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))
@@ -117,7 +113,7 @@ class AppUpdater(private val context: Context) {
     }
 
     /** 시스템 설치 화면을 연다. 서명이 다르면 시스템이 설치를 거부한다 */
-    fun install(file: File) {
+    override fun install(file: File) {
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
         val intent = Intent(Intent.ACTION_VIEW)
             .setDataAndType(uri, "application/vnd.android.package-archive")
@@ -125,21 +121,7 @@ class AppUpdater(private val context: Context) {
         context.startActivity(intent)
     }
 
-    companion object {
-        const val RELEASES_PAGE = "https://github.com/dacisosl/CAR2/releases"
-        private const val LATEST_URL = "https://api.github.com/repos/dacisosl/CAR2/releases/latest"
-
-        /** "0.3.1" > "0.3.0". 숫자가 아닌 꼬리(-beta 등)는 무시한다 */
-        fun isNewer(remote: String, local: String): Boolean {
-            fun parts(v: String) = v.split('.', '-').map { p -> p.takeWhile { it.isDigit() }.toIntOrNull() ?: 0 }
-            val r = parts(remote)
-            val l = parts(local)
-            for (i in 0 until maxOf(r.size, l.size)) {
-                val a = r.getOrElse(i) { 0 }
-                val b = l.getOrElse(i) { 0 }
-                if (a != b) return a > b
-            }
-            return false
-        }
+    private companion object {
+        const val LATEST_URL = "https://api.github.com/repos/dacisosl/CAR2/releases/latest"
     }
 }
