@@ -7,6 +7,7 @@ import app.car.parking.BuildConfig
 import app.car.parking.CarApp
 import app.car.parking.data.location.Fix
 import app.car.parking.data.storage.AppSettings
+import app.car.parking.data.bluetooth.VehicleLink
 import app.car.parking.data.storage.AppThemeId
 import app.car.parking.data.storage.CandidateEntity
 import app.car.parking.data.storage.CandidateStatus
@@ -31,6 +32,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -86,6 +88,16 @@ sealed interface UpdateState {
 
 enum class LocationSaveStatus { Idle, Saving, Saved, Failed }
 
+/** 홈 상단의 차량 상태 한 줄. 자동 기록 준비 상태(아이콘)와 별개로 지금 무슨 일이 있는지 보여 준다 */
+sealed interface VehicleStatus {
+    /** 등록 차량이 연결돼 있음 — 이동 중 */
+    data class Driving(val sinceMs: Long) : VehicleStatus
+    /** 해제를 감지해 층수 기록을 기다리는 후보가 있음 */
+    data class Exited(val candidateId: String, val detectedAtMs: Long) : VehicleStatus
+    /** 보여 줄 것 없음 */
+    data object Idle : VehicleStatus
+}
+
 /** 레코드가 아직 로드되지 않은 상태와 기록 없음 상태를 구분한다 */
 sealed interface RecordState {
     data object Loading : RecordState
@@ -112,6 +124,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val readiness: StateFlow<AutoRecordState> = combine(settings, checks) { s, c ->
         if (s == null) AutoRecordState.MonitoringStopped else Readiness.state(s, c)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, AutoRecordState.MonitoringStopped)
+
+    /** 이동 중(연결) > 하차 감지(표시 대상 후보) > 없음 */
+    val vehicleStatus: StateFlow<VehicleStatus> = combine(settings, pendingCandidate, readiness) { s, candidate, ready ->
+        when {
+            s?.registeredVehicleAddress == null || ready == AutoRecordState.Unsupported -> VehicleStatus.Idle
+            s.vehicleConnected -> VehicleStatus.Driving(s.lastVehicleEventAt)
+            candidate != null -> VehicleStatus.Exited(candidate.id, candidate.detectedAt)
+            else -> VehicleStatus.Idle
+        }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, VehicleStatus.Idle)
 
     private val _drawer = MutableStateFlow(DrawerUiState())
     val drawer: StateFlow<DrawerUiState> = _drawer.asStateFlow()
@@ -205,6 +227,31 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (awaitingInstallPermission && container.updater.canInstall()) installReady()
     }
 
+    /** 자동 표시로 열리지 않은 후보를 사용자가 앱을 열 때 한 번만 올린다(닫으면 다시 올리지 않음) */
+    private var surfacedCandidateId: String? = null
+
+    /**
+     * 화면이 앞으로 올 때마다: 저장된 연결 상태를 실제 프로필 연결로 다시 확인하고(놓친 이벤트 보정),
+     * 오래된 후보는 정리하며, 아직 보여 주지 않은 하차 후보가 있으면 패널을 연다.
+     */
+    fun onForeground() {
+        refreshChecks()
+        viewModelScope.launch {
+            val s = settings.value ?: container.settings.current()
+            val address = s.registeredVehicleAddress ?: return@launch
+            val now = System.currentTimeMillis()
+            container.parking.expireStaleCandidates(address, now, STALE_CANDIDATE_MS)
+            VehicleLink.isConnected(app, address)?.let { connected ->
+                if (connected != s.vehicleConnected) container.settings.setVehicleLink(connected)
+            }
+            if (_drawer.value.open) return@launch
+            val pending = container.parking.pendingCandidate.first() ?: return@launch
+            if (pending.id == surfacedCandidateId) return@launch
+            surfacedCandidateId = pending.id
+            openCandidate(pending.id, autoEntry = false)
+        }
+    }
+
     // ── 자동 진입 ──────────────────────────────────────────────
 
     fun handleEntry(candidateId: String?, openPanel: Boolean, autoEntry: Boolean) {
@@ -215,6 +262,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun openCandidate(candidateId: String, autoEntry: Boolean) {
         val candidate = container.parking.candidate(candidateId) ?: return
         if (candidate.status != CandidateStatus.READY) return
+        surfacedCandidateId = candidateId
         AutoLauncher.cancelFallback(app)
         _drawer.value = DrawerUiState(
             open = true,
@@ -419,5 +467,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
         private const val AUTO_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000L
         private const val LOCATION_ATTACH_WINDOW_MS = 3 * 60 * 1000L
+        /** 이보다 오래 기록하지 않은 하차 후보는 지난 주차로 보고 정리한다 */
+        private const val STALE_CANDIDATE_MS = 12 * 60 * 60 * 1000L
     }
 }

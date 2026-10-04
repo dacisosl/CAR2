@@ -48,7 +48,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        viewModel.refreshChecks()
+        // 권한·설정 재확인 + 실제 차량 연결 상태 보정 + 아직 보여 주지 않은 하차 후보 표시
+        viewModel.onForeground()
     }
 
     private fun handleEntry(intent: Intent) {

@@ -5,6 +5,7 @@ import app.car.parking.data.sensor.PressureReading
 import app.car.parking.data.storage.CandidateEntity
 import app.car.parking.data.storage.CandidateStatus
 import app.car.parking.data.storage.DetectionSource
+import app.car.parking.data.storage.AppSettings
 import app.car.parking.data.storage.FloorReferenceEntity
 import app.car.parking.data.storage.LocationSource
 import app.car.parking.data.storage.ParkingDao
@@ -38,30 +39,41 @@ class ParkingRepository(
     suspend fun latestRecordNow(): ParkingRecordEntity? = dao.latestRecord()
     suspend fun candidate(id: String): CandidateEntity? = dao.candidate(id)
 
-    /** 등록 차량 연결. 확인 중인 후보와 확인하지 않은 후보를 취소한다. 확정 기록은 지우지 않는다. */
+    /**
+     * 등록 차량 연결(이동 시작). 확인 중인 후보는 ‘잠깐 끊김’이므로 취소한다.
+     * 이미 표시 대상이 된 후보는 사용자가 아직 층을 적지 않은 주차이므로 남겨 둔다
+     * (다음 해제 때 새 후보로 바뀐다). 확정 기록은 지우지 않는다.
+     */
     suspend fun onVehicleConnected(vehicleId: String, atMs: Long) = candidateLock.withLock {
         settings.setLastConnectedAt(atMs)
+        settings.setVehicleLink(connected = true, atMs = atMs)
         dao.moveCandidates(vehicleId, CandidateStatus.CHECKING, CandidateStatus.CANCELLED)
-        dao.moveCandidates(vehicleId, CandidateStatus.READY, CandidateStatus.CANCELLED)
     }
 
     /**
-     * 연결 해제 직후 후보를 '확인 중'으로 만든다. 같은 연결 세션의 중복 해제는 null.
-     * 기압은 해제 시점 스냅샷만 저장한다.
+     * 연결 해제 직후 후보를 '확인 중'으로 만든다. 기압은 해제 시점 스냅샷만 저장한다.
+     *
+     * 중복 판정은 시간으로만 한다: 재연결 확인 시간([dedupWindowMs]) 안에 이미 활성 후보가 있으면
+     * 같은 하차의 두 번째 해제(BR/EDR·LE 이중 전송 등)로 보고 null. 그보다 오래된 활성 후보는
+     * 지난 주차의 것이므로 취소하고 새 후보를 만든다. 연결 이벤트를 놓쳐도 해제는 항상 기록된다.
      */
-    suspend fun beginCandidate(vehicleId: String, detectedAtMs: Long, pressure: PressureReading?): CandidateEntity? =
+    suspend fun beginCandidate(
+        vehicleId: String,
+        detectedAtMs: Long,
+        pressure: PressureReading?,
+        dedupWindowMs: Long = AppSettings.DEFAULT_RECONNECT_MS,
+    ): CandidateEntity? =
         candidateLock.withLock {
-            val connectedAt = settings.current().lastConnectedAt
-            // 연결 이벤트가 먼저 처리된 경우: 이 해제는 이미 지난 연결 세션의 것이다
-            if (connectedAt > 0L && detectedAtMs < connectedAt) return@withLock null
-            val sessionKey = if (connectedAt > 0L) "$vehicleId@$connectedAt" else "$vehicleId@d$detectedAtMs"
-            if (dao.candidateBySession(sessionKey) != null) return@withLock null
+            settings.setVehicleLink(connected = false, atMs = detectedAtMs)
             val active = dao.activeCandidate(vehicleId)
-            if (active != null && (connectedAt == 0L || active.detectedAt >= connectedAt)) return@withLock null
+            if (active != null) {
+                if (detectedAtMs - active.detectedAt in 0..dedupWindowMs) return@withLock null
+                dao.setCandidateStatus(active.id, CandidateStatus.CANCELLED)
+            }
             val candidate = CandidateEntity(
                 id = UUID.randomUUID().toString(),
                 vehicleId = vehicleId,
-                sessionKey = sessionKey,
+                sessionKey = "$vehicleId@$detectedAtMs",
                 detectedAt = detectedAtMs,
                 status = CandidateStatus.CHECKING,
                 pressureHpa = pressure?.hpa,
@@ -85,6 +97,14 @@ class ParkingRepository(
 
     suspend fun cancelCandidate(candidateId: String) {
         dao.setCandidateStatus(candidateId, CandidateStatus.CANCELLED)
+    }
+
+    /** 표시 대상 후보 중 [maxAgeMs]보다 오래된 것은 지난 주차로 보고 정리한다 */
+    suspend fun expireStaleCandidates(vehicleId: String, nowMs: Long, maxAgeMs: Long) = candidateLock.withLock {
+        val active = dao.activeCandidate(vehicleId) ?: return@withLock
+        if (active.status == CandidateStatus.READY && nowMs - active.detectedAt > maxAgeMs) {
+            dao.setCandidateStatus(active.id, CandidateStatus.CANCELLED)
+        }
     }
 
     /** 앱이 표시된 직후의 현재 위치를 후보에 붙인다. 이미 좌표가 있으면 바꾸지 않는다. */

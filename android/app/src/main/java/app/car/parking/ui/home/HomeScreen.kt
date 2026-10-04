@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
@@ -53,6 +54,7 @@ import app.car.parking.ui.theme.CarType
 import app.car.parking.ui.theme.ElapsedTone
 import app.car.parking.ui.theme.LocalCarTokens
 import app.car.parking.ui.LocationSaveStatus
+import app.car.parking.ui.VehicleStatus
 import app.car.parking.ui.theme.cardSurface
 import app.car.parking.ui.theme.primarySurface
 import kotlinx.coroutines.delay
@@ -61,6 +63,7 @@ import kotlinx.coroutines.delay
 fun HomeScreen(
     record: ParkingRecordEntity?,
     readiness: AutoRecordState,
+    vehicleStatus: VehicleStatus,
     location: CurrentLocationState,
     onOpenSettings: () -> Unit,
     onOpenReadiness: () -> Unit,
@@ -83,7 +86,8 @@ fun HomeScreen(
         val side = if (maxWidth < 360.dp) 16.dp else 20.dp
         val topLimit = maxHeight * 0.62f
         Column(Modifier.fillMaxSize().padding(horizontal = side)) {
-            Header(readiness, onOpenSettings, onOpenReadiness)
+            Header(readiness, vehicleStatus, onOpenSettings, onOpenReadiness)
+            VehicleStatusLine(vehicleStatus, now, onOpenFloor)
             // 큰 글자에서는 위쪽 정보만 스크롤하고 지도 공간은 남긴다
             Column(
                 Modifier
@@ -164,9 +168,15 @@ fun HomeScreen(
 }
 
 @Composable
-private fun Header(readiness: AutoRecordState, onOpenSettings: () -> Unit, onOpenReadiness: () -> Unit) {
+private fun Header(
+    readiness: AutoRecordState,
+    vehicleStatus: VehicleStatus,
+    onOpenSettings: () -> Unit,
+    onOpenReadiness: () -> Unit,
+) {
     val t = LocalCarTokens.current
-    val active = readiness == AutoRecordState.Ready
+    val ready = readiness == AutoRecordState.Ready
+    val driving = vehicleStatus is VehicleStatus.Driving
     Row(
         Modifier.fillMaxWidth().padding(top = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -179,18 +189,62 @@ private fun Header(readiness: AutoRecordState, onOpenSettings: () -> Unit, onOpe
             colorFilter = t.logoFilter,
         )
         Spacer(Modifier.weight(1f))
-        // 자동 기록 준비 상태: 활성은 검정 심볼 + 옅은 회색 채움, 비활성은 회색 심볼
+        // 명암·채움으로 상태 표현: 차량 연결(이동 중) = 주색 채움, 준비됨 = 진한 심볼 + 테두리, 꺼짐 = 회색 심볼
         IconTarget(
             icon = R.drawable.ic_bluetooth,
-            description = Readiness.description(readiness),
+            description = if (driving) "차량 연결됨, 이동 중" else Readiness.description(readiness),
             onClick = onOpenReadiness,
-            tint = if (active) t.onPrimary else t.inactive,
-            background = if (active) t.primary else androidx.compose.ui.graphics.Color.Transparent,
-            border = if (active) t.primaryHairline else null,
+            tint = when {
+                driving -> t.onPrimary
+                ready -> t.black
+                else -> t.inactive
+            },
+            background = if (driving) t.primary else androidx.compose.ui.graphics.Color.Transparent,
+            border = if (driving) t.primaryHairline else if (ready) t.border else null,
         )
         Spacer(Modifier.width(4.dp))
         IconTarget(icon = R.drawable.ic_settings, description = "설정", onClick = onOpenSettings, iconSize = 24.dp)
     }
+}
+
+/**
+ * 차량 상태 한 줄. 연결돼 있으면 ‘이동 중’, 해제를 감지해 기록을 기다리는 후보가 있으면 ‘하차 감지’.
+ * 보여 줄 것이 없으면 아무 줄도 두지 않는다(홈에 상시 안내 문구를 두지 않는 규칙).
+ */
+@Composable
+private fun VehicleStatusLine(status: VehicleStatus, now: Long, onOpenFloor: () -> Unit) {
+    val t = LocalCarTokens.current
+    val (text, color, action) = when (status) {
+        is VehicleStatus.Driving -> Triple(
+            "차량 연결됨 · 이동 중" + sinceText(now - status.sinceMs),
+            t.textSecondary,
+            null,
+        )
+        is VehicleStatus.Exited -> Triple(
+            "하차 감지" + sinceText(now - status.detectedAtMs) + " · 눌러서 층수 기록",
+            t.elapsedGreen,
+            onOpenFloor,
+        )
+        VehicleStatus.Idle -> return
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 6.dp)
+            .let { m -> action?.let { m.clip(t.buttonShape).clickable(role = Role.Button, onClick = it) } ?: m }
+            .semantics { if (action != null) contentDescription = "$text, 층수 기록 열기" },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(8.dp).clip(CircleShape).background(if (status is VehicleStatus.Exited) t.elapsedGreen else t.primary))
+        Spacer(Modifier.width(8.dp))
+        Text(text, style = CarType.secondary.copy(fontWeight = FontWeight.Bold), color = color)
+    }
+}
+
+/** ‘ · 3분 전’처럼 짧게. 1분 미만·시각 없음이면 빈 문자열 */
+private fun sinceText(ms: Long): String {
+    if (ms < 60_000L || ms > 7L * 24 * 60 * 60 * 1000L) return ""
+    return " · ${elapsedText(ms)} 전"
 }
 
 @Composable

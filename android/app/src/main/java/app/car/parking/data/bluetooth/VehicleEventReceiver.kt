@@ -24,7 +24,13 @@ import kotlinx.coroutines.withContext
  * 등록 차량의 ACL 연결/해제 수신. ACL_CONNECTED/DISCONNECTED는 매니페스트 수신기 허용 예외라
  * 앱 프로세스가 없어도 전달된다(시스템 ‘강제 중지’ 상태는 제외 — 실기기 검증 항목).
  *
- * 해제 → 기압 스냅샷 → 재연결 확인(기본 6초) → 후보 확정 → 앱 자동 표시.
+ * 연결 → ‘이동 중’ 상태 저장, 확인 중이던 후보 취소.
+ * 해제 → 후보 생성(‘하차 감지’) → 기압 스냅샷 → 재연결 확인(기본 6초) → 실제 연결 여부 조회 → 앱 자동 표시.
+ *
+ * 재연결 확인 동안 수신기를 goAsync로 붙잡아 둔다. 수신기를 먼저 끝내면 백그라운드 프로세스가
+ * 몇 초 안에 정리될 수 있어 확인이 끝나기 전에 사라졌다(패널이 뜨지 않던 원인). 붙잡는 동안
+ * 뒤이은 ACL_CONNECTED는 대기하므로, 재연결 여부는 브로드캐스트가 아니라 [VehicleLink]로 직접 묻는다.
+ * 백그라운드 브로드캐스트의 수신기 제한(60초)보다 훨씬 짧게 끝낸다.
  */
 class VehicleEventReceiver : BroadcastReceiver() {
 
@@ -48,20 +54,18 @@ class VehicleEventReceiver : BroadcastReceiver() {
                         AutoLauncher.cancelFallback(app)
                     }
                     BluetoothDevice.ACTION_ACL_DISCONNECTED -> {
-                        if (!settings.autoRecordRequested) return@launch
                         if (bluetoothTurningOff(app)) {
                             Log.i(TAG, "disconnect caused by Bluetooth off — not a parking event")
+                            app.container.settings.setVehicleLink(connected = false, atMs = now)
                             return@launch
                         }
-                        // 매니페스트 수신기는 순서대로 전달된다. 이 수신기를 6초 동안 붙잡으면 그 사이의
-                        // ACL_CONNECTED가 확인 시간이 끝난 뒤에야 도착하므로, 후보만 만들고 바로 끝낸다
-                        val candidate = app.container.parking.beginCandidate(registered, now, null)
+                        val window = settings.reconnectCheckMs.coerceIn(1_000L, MAX_WINDOW_MS)
+                        val candidate = app.container.parking.beginCandidate(registered, now, null, window)
                         if (candidate == null) {
                             Log.i(TAG, "duplicate disconnect merged into existing candidate")
                         } else {
-                            app.container.appScope.launch {
-                                handleDisconnect(app, candidate.id, settings.reconnectCheckMs)
-                            }
+                            Log.i(TAG, "vehicle disconnected — candidate ${candidate.id} checking for ${window}ms")
+                            handleDisconnect(app, registered, candidate.id, window)
                         }
                     }
                 }
@@ -73,7 +77,7 @@ class VehicleEventReceiver : BroadcastReceiver() {
         }
     }
 
-    private suspend fun handleDisconnect(app: CarApp, candidateId: String, checkMs: Long) {
+    private suspend fun handleDisconnect(app: CarApp, address: String, candidateId: String, checkMs: Long) {
         val container = app.container
         // 해제 직후 기압 스냅샷. 재연결 확인과 동시에 측정한다
         val pressure = scope.async { container.pressure.sample() }
@@ -88,8 +92,15 @@ class VehicleEventReceiver : BroadcastReceiver() {
             container.parking.cancelCandidate(candidateId)
             return
         }
+        // 시동만 껐다 켠 경우: 차량이 다시 연결돼 있으면 주차가 아니다
+        if (VehicleLink.isConnected(app, address, LINK_QUERY_MS) == true) {
+            Log.i(TAG, "vehicle reconnected within check window — candidate cancelled")
+            container.parking.cancelCandidate(candidateId)
+            container.settings.setVehicleLink(connected = true, atMs = System.currentTimeMillis())
+            return
+        }
         if (!container.parking.finishReconnectCheck(candidateId)) {
-            Log.i(TAG, "reconnected within check window — candidate cancelled")
+            Log.i(TAG, "candidate no longer checking — nothing to show")
             return
         }
         val wasBackground = withContext(Dispatchers.Main) {
@@ -115,6 +126,9 @@ class VehicleEventReceiver : BroadcastReceiver() {
 
     companion object {
         private const val TAG = "VehicleEvent"
+        /** 수신기를 붙잡는 상한. 기압·연결 조회를 더해도 백그라운드 수신기 제한 안에 끝난다 */
+        private const val MAX_WINDOW_MS = 10_000L
+        private const val LINK_QUERY_MS = 1_500L
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     }
 }

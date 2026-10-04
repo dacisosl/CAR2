@@ -83,6 +83,7 @@ fun CarRoot(viewModel: AppViewModel, onUnlockThen: (() -> Unit) -> Unit) {
     val drawer by viewModel.drawer.collectAsState()
     val checks by viewModel.checks.collectAsState()
     val readiness by viewModel.readiness.collectAsState()
+    val vehicleStatus by viewModel.vehicleStatus.collectAsState()
     val locationSave by viewModel.locationSave.collectAsState()
     val update by viewModel.update.collectAsState()
     val updatePrompt by viewModel.updatePrompt.collectAsState()
@@ -132,6 +133,7 @@ fun CarRoot(viewModel: AppViewModel, onUnlockThen: (() -> Unit) -> Unit) {
                     HomeScreen(
                         record = record,
                         readiness = readiness,
+                        vehicleStatus = vehicleStatus,
                         location = location,
                         onOpenSettings = { settingsFocusReadiness = false; screen = Screen.Settings },
                         onOpenReadiness = { settingsFocusReadiness = true; screen = Screen.Settings },

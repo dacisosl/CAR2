@@ -47,6 +47,10 @@ data class AppSettings(
     val onboardingCompleted: Boolean = false,
     val reconnectCheckMs: Long = DEFAULT_RECONNECT_MS,
     val lastConnectedAt: Long = 0L,
+    /** 등록 차량이 지금 연결돼 있는지(마지막 ACL 이벤트·실제 프로필 확인으로 갱신). 홈의 ‘이동 중’ 표시 */
+    val vehicleConnected: Boolean = false,
+    /** 마지막 연결·해제 이벤트 시각 */
+    val lastVehicleEventAt: Long = 0L,
     val homeLatitude: Double? = null,
     val homeLongitude: Double? = null,
 ) {
@@ -70,6 +74,8 @@ class SettingsStore(private val context: Context) {
         val onboarding = booleanPreferencesKey("onboardingCompleted")
         val reconnectMs = longPreferencesKey("reconnectCheckMs")
         val lastConnectedAt = longPreferencesKey("lastConnectedAt")
+        val vehicleConnected = booleanPreferencesKey("vehicleConnected")
+        val lastVehicleEventAt = longPreferencesKey("lastVehicleEventAt")
         val homeLat = doublePreferencesKey("homeLatitude")
         val homeLng = doublePreferencesKey("homeLongitude")
     }
@@ -89,6 +95,8 @@ class SettingsStore(private val context: Context) {
         onboardingCompleted = this[Keys.onboarding] ?: false,
         reconnectCheckMs = this[Keys.reconnectMs] ?: AppSettings.DEFAULT_RECONNECT_MS,
         lastConnectedAt = this[Keys.lastConnectedAt] ?: 0L,
+        vehicleConnected = this[Keys.vehicleConnected] ?: false,
+        lastVehicleEventAt = this[Keys.lastVehicleEventAt] ?: 0L,
         homeLatitude = this[Keys.homeLat],
         homeLongitude = this[Keys.homeLng],
     )
@@ -109,11 +117,21 @@ class SettingsStore(private val context: Context) {
         context.dataStore.edit { it[Keys.lastConnectedAt] = time }
     }
 
+    /** 차량 연결 상태. [atMs]가 0이면 이벤트 시각은 바꾸지 않는다(실제 상태 재확인) */
+    suspend fun setVehicleLink(connected: Boolean, atMs: Long = 0L) {
+        context.dataStore.edit {
+            it[Keys.vehicleConnected] = connected
+            if (atMs > 0L) it[Keys.lastVehicleEventAt] = atMs
+        }
+    }
+
     suspend fun setVehicle(address: String, name: String?) {
         context.dataStore.edit {
             if (it[Keys.vehicleAddress] != address) {
-                // 다른 차량으로 바꾸면 이전 차량의 연결 세션을 쓰지 않는다
+                // 다른 차량으로 바꾸면 이전 차량의 연결 세션·연결 상태를 쓰지 않는다
                 it.remove(Keys.lastConnectedAt)
+                it.remove(Keys.vehicleConnected)
+                it.remove(Keys.lastVehicleEventAt)
             }
             it[Keys.vehicleAddress] = address
             if (name != null) it[Keys.vehicleName] = name else it.remove(Keys.vehicleName)

@@ -60,7 +60,7 @@ object CandidateStatus {
     const val CANCELLED = "cancelled"
 }
 
-/** 연결 해제로 생긴 주차 후보. sessionKey로 같은 연결 세션의 중복 해제를 하나로 합친다. */
+/** 연결 해제로 생긴 주차 후보. 중복 해제는 시간 창으로 합치며 sessionKey는 `차량@해제시각`이다. */
 @Entity(tableName = "parking_candidate", indices = [Index(value = ["sessionKey"], unique = true)])
 data class CandidateEntity(
     @PrimaryKey val id: String,
@@ -99,9 +99,6 @@ interface ParkingDao {
 
     @Upsert
     suspend fun upsertRecord(record: ParkingRecordEntity)
-
-    @Query("SELECT * FROM parking_candidate WHERE sessionKey = :sessionKey LIMIT 1")
-    suspend fun candidateBySession(sessionKey: String): CandidateEntity?
 
     @Query("SELECT * FROM parking_candidate WHERE vehicleId = :vehicleId AND status IN ('checking', 'ready') ORDER BY detectedAt DESC LIMIT 1")
     suspend fun activeCandidate(vehicleId: String): CandidateEntity?
