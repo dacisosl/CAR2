@@ -25,7 +25,7 @@ import kotlinx.coroutines.withContext
  * 앱 프로세스가 없어도 전달된다(시스템 ‘강제 중지’ 상태는 제외 — 실기기 검증 항목).
  *
  * 연결 → ‘이동 중’ 상태 저장, 확인 중이던 후보 취소.
- * 해제 → 후보 생성(‘하차 감지’) → 기압 스냅샷 → 재연결 확인(기본 6초) → 실제 연결 여부 조회 → 앱 자동 표시.
+ * 해제 → 후보 생성(‘하차 감지’) → 기압 스냅샷 → 재연결 확인(기본 2초) → 실제 연결 여부 조회 → 앱 자동 표시.
  *
  * 재연결 확인 동안 수신기를 goAsync로 붙잡아 둔다. 수신기를 먼저 끝내면 백그라운드 프로세스가
  * 몇 초 안에 정리될 수 있어 확인이 끝나기 전에 사라졌다(패널이 뜨지 않던 원인). 붙잡는 동안
@@ -79,8 +79,8 @@ class VehicleEventReceiver : BroadcastReceiver() {
 
     private suspend fun handleDisconnect(app: CarApp, address: String, candidateId: String, checkMs: Long) {
         val container = app.container
-        // 해제 직후 기압 스냅샷. 재연결 확인과 동시에 측정한다
-        val pressure = scope.async { container.pressure.sample() }
+        // 해제 직후 기압 스냅샷. 재연결 확인과 동시에, 확인 시간 안에 끝나도록 측정한다
+        val pressure = scope.async { container.pressure.sample(windowMs = minOf(1_500L, checkMs), timeoutMs = checkMs + 500L) }
         delay(checkMs)
         val reading = pressure.await()
         if (reading != null) {
@@ -128,7 +128,8 @@ class VehicleEventReceiver : BroadcastReceiver() {
         private const val TAG = "VehicleEvent"
         /** 수신기를 붙잡는 상한. 기압·연결 조회를 더해도 백그라운드 수신기 제한 안에 끝난다 */
         private const val MAX_WINDOW_MS = 10_000L
-        private const val LINK_QUERY_MS = 1_500L
+        /** 프로필 연결 조회 제한. 두 프로필을 동시에 물어 이 시간 안에 끝낸다 */
+        private const val LINK_QUERY_MS = 800L
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     }
 }

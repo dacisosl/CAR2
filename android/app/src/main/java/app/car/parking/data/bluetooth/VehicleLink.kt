@@ -5,6 +5,9 @@ import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.content.Context
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
@@ -22,15 +25,15 @@ object VehicleLink {
         if (!BondedDevices.hasConnectPermission(context)) return null
         val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter ?: return null
         if (adapter.state != BluetoothAdapter.STATE_ON) return false
-        var known = false
-        for (profile in PROFILES) {
-            when (connectedIn(context, adapter, profile, address, timeoutMs)) {
-                true -> return true
-                false -> known = true
-                null -> {}
-            }
+        // 두 프로필을 동시에 물어 가장 느린 응답 하나만큼만 기다린다
+        val results = coroutineScope {
+            PROFILES.map { profile -> async { connectedIn(context, adapter, profile, address, timeoutMs) } }.awaitAll()
         }
-        return if (known) false else null
+        return when {
+            results.any { it == true } -> true
+            results.any { it == false } -> false
+            else -> null
+        }
     }
 
     @SuppressLint("MissingPermission")

@@ -57,8 +57,8 @@ data class AppSettings(
     val hasHome: Boolean get() = homeLatitude != null && homeLongitude != null
 
     companion object {
-        /** 실기기 테스트 전까지의 초안 값 */
-        const val DEFAULT_RECONNECT_MS = 6_000L
+        /** 시동을 끄고 내리면 2초 안에 패널이 뜨도록 한다. 이 시간 안의 재연결(시동 재시동)은 주차로 보지 않는다 (2026-10-04 사용자 결정) */
+        const val DEFAULT_RECONNECT_MS = 2_000L
     }
 }
 
