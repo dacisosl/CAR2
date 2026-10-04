@@ -29,18 +29,24 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 data class DrawerUiState(
     val open: Boolean = false,
@@ -179,7 +185,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 val target = state.target
                 if (state.open && !state.saving && target is DrawerTarget.Candidate && pending?.id != target.candidateId) {
                     val current = container.parking.candidate(target.candidateId)
-                    if (current?.status == CandidateStatus.CANCELLED) closeDrawer()
+                    if (current?.status != CandidateStatus.CANCELLED) return@collect
+                    // 조회하는 사이 새 하차 후보의 패널로 바뀌었을 수 있다: 그 패널은 건드리지 않는다
+                    var closed = false
+                    _drawer.update {
+                        closed = it.open && !it.saving && it.target == target
+                        if (closed) DrawerUiState() else it
+                    }
+                    if (!closed) return@collect
+                    drawerJob?.cancel()
+                    // 자동으로 띄운 패널을 손대기 전에 닫았으면 원래 쓰던 앱(내비게이션 등)으로 돌아간다
+                    if (state.autoEntry && !state.userTouched) abandonAutoEntry()
                 }
             }
         }
@@ -314,7 +330,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (autoEntry) autoEntryPending.value = true
         viewModelScope.launch {
             try {
-                openCandidate(candidateId, autoEntry)
+                val opened = openCandidate(candidateId, autoEntry)
+                // 화면이 뜨는 사이 후보가 취소됐으면(시동만 껐다 켬) 패널 없이 앞에 남지 않게 한다
+                if (autoEntry && !opened && !_drawer.value.open) abandonAutoEntry()
             } finally {
                 _entryPending.value = false
                 autoEntryPending.value = false
@@ -322,13 +340,31 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private suspend fun openCandidate(candidateId: String, autoEntry: Boolean) {
+    /**
+     * 자동 진입이 사용자 조작 없이 끝났다(패널이 열리기 전후로 후보가 취소됨). 화면이 원래 앱으로 돌아가게 알린다.
+     * 이전 후보를 취소하고 새 후보를 만든 경우(곧 새 패널이 뜸)와 구분하려고 잠깐 기다린 뒤 다시 확인한다.
+     */
+    private fun abandonAutoEntry() {
+        viewModelScope.launch {
+            delay(ABANDON_SETTLE_MS)
+            if (_drawer.value.open || container.parking.pendingCandidate.first() != null) return@launch
+            _autoEntryAbandoned.tryEmit(Unit)
+        }
+    }
+
+    private val _autoEntryAbandoned = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    /** MainActivity가 받아, 자동 진입이 이 앱을 뒤에서 꺼냈던 경우에만 원래 앱으로 돌려보낸다 */
+    val autoEntryAbandoned: SharedFlow<Unit> = _autoEntryAbandoned.asSharedFlow()
+
+    /** @return 패널을 열었으면 true */
+    private suspend fun openCandidate(candidateId: String, autoEntry: Boolean): Boolean {
         // 저장 중인 패널은 저장이 끝날 때까지 다른 패널로 바꾸지 않는다
-        if (_drawer.value.saving) return
-        val candidate = container.parking.candidate(candidateId) ?: return
-        if (candidate.status != CandidateStatus.READY) return
+        if (_drawer.value.saving) return false
+        val candidate = container.parking.candidate(candidateId) ?: return false
+        if (candidate.status != CandidateStatus.READY) return false
         surfacedCandidateId = candidateId
-        AutoLauncher.cancelFallback(app)
+        // 수신기가 화면이 열렸음을 알 수 있게 한다(그러면 보조 알림을 올리지 않는다)
+        AutoLauncher.markShown(app, candidateId)
         _drawer.value = DrawerUiState(
             open = true,
             target = DrawerTarget.Candidate(candidateId),
@@ -341,18 +377,26 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         // 추천 계산이 늦어도 패널은 먼저 연다
         drawerJob?.cancel()
         drawerJob = viewModelScope.launch {
-            applyRecommendation(container.parking.recommendationFor(candidate, container.pressure.hasBarometer))
-            if (locating != null) {
-                // drawerJob이 취소되면 기다림만 멈추고 위치 작업(appScope)은 계속된다
-                locating.join()
-                val current = container.parking.candidate(candidateId) ?: candidate
-                if (current.latitude != null) {
-                    applyHomeDefault(current.latitude, current.longitude)
-                    applyRecommendation(container.parking.recommendationFor(current, container.pressure.hasBarometer))
-                }
+            val hasBarometer = container.pressure.hasBarometer
+            applyRecommendation(container.parking.recommendationFor(candidate, hasBarometer))
+            // 기압(해제 후 약 1.5초)과 위치는 패널이 뜬 뒤에 붙는다. 붙을 때마다 다시 계산하고, 둘 다 붙으면 멈춘다.
+            // drawerJob이 취소되면 기다림만 멈추고 위치·기압 작업(앱 범위)은 계속된다
+            withTimeoutOrNull(RECOMMENDATION_WAIT_MS) {
+                pendingCandidate
+                    .filterNotNull()
+                    .filter { it.id == candidateId }
+                    .distinctUntilChanged { a, b -> a.pressureHpa == b.pressureHpa && a.latitude == b.latitude }
+                    .first { current ->
+                        if (current.latitude != null) applyHomeDefault(current.latitude, current.longitude)
+                        applyRecommendation(container.parking.recommendationFor(current, hasBarometer))
+                        val pressureDone = current.pressureHpa != null || !hasBarometer
+                        val locationDone = current.latitude != null || locating == null || !locating.isActive
+                        pressureDone && locationDone
+                    }
             }
             _drawer.update { it.copy(recommendationPending = false) }
         }
+        return true
     }
 
     /** 해제 직후 위치를 한 번 받아 후보(또는 이미 저장된 기록)에 붙인다. 같은 후보의 진행 중 작업은 재사용한다 */
@@ -555,7 +599,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     /** 알림 권한을 새로 받은 뒤 상태바 표시를 다시 게시한다 */
     fun resyncStatusBar() = viewModelScope.launch {
-        StatusBarNotifier.refresh(app)
+        // 비트맵 그리기·알림 호출은 메인 스레드 밖에서(패널 첫 화면과 겹치지 않게)
+        withContext(Dispatchers.Default) { StatusBarNotifier.refresh(app) }
     }
 
     fun setVehicle(address: String, name: String?) = viewModelScope.launch { container.settings.setVehicle(address, name) }
@@ -566,6 +611,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         private const val LOCATION_ATTACH_WINDOW_MS = 3 * 60 * 1000L
         /** 이보다 오래 기록하지 않은 하차 후보는 지난 주차로 보고 정리한다 */
         private const val STALE_CANDIDATE_MS = 12 * 60 * 60 * 1000L
+
+        /** 기압·위치가 후보에 붙기를 기다리며 추천을 다시 계산하는 최대 시간(위치 요청 제한 8초 + 여유) */
+        private const val RECOMMENDATION_WAIT_MS = 10_000L
+
+        /** 취소된 자동 진입을 버리기 전에 새 하차 후보가 이어지는지 기다리는 시간 */
+        private const val ABANDON_SETTLE_MS = 600L
 
         /** 연결 이벤트 직후 오디오 프로필이 붙기까지 기다려 주는 시간 */
         private const val LINK_GRACE_MS = 30_000L

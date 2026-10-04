@@ -49,7 +49,7 @@ def rounded(img, radius):
 
 
 # 캡처별로 지울 상태바 구간. 저장 전에 찍은 패널 캡처에는 B2 표지판이 아직 없어 시계 뒤를 모두 지운다
-CLEAN = {"store-drawer-forest.png": [(176, 404)]}
+CLEAN = {"store-drawer-forest.png": [(150, 404)]}
 
 
 def declutter(shot, name=None):

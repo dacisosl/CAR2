@@ -10,6 +10,7 @@ import android.os.Build
 import android.util.Log
 import androidx.lifecycle.Lifecycle
 import app.car.parking.CarApp
+import app.car.parking.data.storage.CandidateStatus
 import app.car.parking.platform.autolaunch.AutoLauncher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -73,7 +74,16 @@ class VehicleEventReceiver : BroadcastReceiver() {
                         } else {
                             val launched = AutoLauncher.launchCandidate(app, candidate.id)
                             Log.i(TAG, "vehicle disconnected — candidate ${candidate.id} shown immediately, launch=$launched")
-                            app.container.appScope.launch { verifyAfterLaunch(app, registered, candidate.id, window) }
+                            // 기압은 해제 시점에 재야 하므로 화면 확인을 기다리지 않고 바로 시작한다
+                            val verify = app.container.appScope.launch { verifyAfterLaunch(app, registered, candidate.id, window) }
+                            // 화면이 실제로 열렸는지 잠깐 본다. 열리지 않았고(실행이 막힘 등) 후보가 아직 기록 대상일 때만 보조 알림
+                            val shown = AutoLauncher.awaitShown(candidate.id, if (launched) SHOW_CONFIRM_MS else 0L)
+                            if (!shown && app.container.parking.candidate(candidate.id)?.status == CandidateStatus.READY) {
+                                Log.i(TAG, "panel not shown — fallback notification posted")
+                                AutoLauncher.postFallback(app, candidate.id)
+                            }
+                            // 화면을 띄우지 못했으면 프로세스를 붙잡아 줄 화면이 없다: 기압·재연결 확인을 수신기 시간 안에 끝낸다
+                            if (!launched) verify.join()
                         }
                         linkWrite.await()
                     }
@@ -90,11 +100,19 @@ class VehicleEventReceiver : BroadcastReceiver() {
     private suspend fun verifyAfterLaunch(app: CarApp, address: String, candidateId: String, checkMs: Long) {
         val container = app.container
         val pressure = scope.async { container.pressure.sample(windowMs = minOf(1_500L, checkMs), timeoutMs = checkMs + 500L) }
-        delay(checkMs)
-        pressure.await()?.let { reading ->
-            // 좌표·상태를 덮어쓰지 않도록 기압 열만 갱신한다(위치 첨부·저장과 동시에 일어날 수 있음)
-            container.db.dao().setCandidatePressure(candidateId, reading.hpa, reading.measuredAtMs)
+        // 측정이 끝나는 대로 붙인다(확인 시간을 기다리지 않는다). 패널의 층수 추천이 바로 다시 계산되고,
+        // 그 사이 이미 저장했으면 저장한 층으로 기준점을 만든다
+        val pressureWrite = scope.launch {
+            val reading = pressure.await()
+            if (reading == null) {
+                Log.i(TAG, "no pressure sample (no barometer or timeout)")
+            } else {
+                val result = container.parking.attachPressure(candidateId, reading)
+                Log.i(TAG, "pressure ${reading.hpa} hPa (${reading.sampleCount} samples) → $result")
+            }
         }
+        delay(checkMs)
+        pressureWrite.join()
         if (bluetoothTurningOff(app)) return
         // 시동만 껐다 켠 경우: 차량이 다시 연결돼 있으면 주차가 아니다(연결 이벤트를 놓쳤을 때의 보정).
         // 조회 시작 시각으로 기록해, 조회하는 동안 다시 끊긴 이벤트가 이 결과보다 나중으로 남게 한다
@@ -126,6 +144,8 @@ class VehicleEventReceiver : BroadcastReceiver() {
         private const val MAX_WINDOW_MS = 10_000L
         /** 프로필 연결 조회 제한. 두 프로필을 동시에 물어 이 시간 안에 끝낸다 */
         private const val LINK_QUERY_MS = 800L
+        /** 실행을 요청한 뒤 화면이 후보를 열 때까지 기다리는 시간. 넘으면 보조 알림을 올린다 */
+        private const val SHOW_CONFIRM_MS = 2_000L
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     }
 }

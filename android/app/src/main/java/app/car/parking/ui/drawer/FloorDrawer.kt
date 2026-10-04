@@ -277,15 +277,16 @@ fun FloorDrawer(
                 }
                 }
 
-                // 상태바 스위치 + 작은 저장 버튼, 한 행 두 열. 둘 다 패널 안
+                // 상태바 스위치 + 저장 버튼, 한 행 두 열. 둘 다 패널 안.
+                // 위 칸과 열을 맞춘다: 상태바는 릴 폭(내용에 맞는 길이), 저장은 장면 폭
                 Row(
                     Modifier.fillMaxWidth().padding(top = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(
                         Modifier
-                            .weight(1f)
+                            .width(reelWidth)
                             .height(56.dp)
                             .clip(t.buttonShape)
                             .border(1.dp, t.accentSilver ?: t.border, t.buttonShape)
@@ -317,7 +318,7 @@ fun FloorDrawer(
                     val canSave = (state.selectedLevel ?: state.centerLevel) != null && !state.saving
                     Box(
                         Modifier
-                            .width(92.dp)
+                            .weight(1f)
                             .height(56.dp)
                             .clip(t.buttonShape)
                             .primarySurface(t, t.buttonShape, enabled = canSave)

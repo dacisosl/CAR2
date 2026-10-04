@@ -26,6 +26,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -64,11 +66,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.shadow.InnerShadowPainter
 import androidx.compose.ui.graphics.shadow.Shadow
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 
 private enum class MapConnection { NoKey, Connecting, Ready, AuthFailed }
 
 /** 자동 진입 시 패널 첫 프레임 뒤 지도 생성까지의 지연 */
-private const val MAP_DEFER_MS = 700L
+/** 자동 진입 때 지도 생성을 미루는 최대 시간: 주차 영상 5초 + 표지판 확대 1초 + 여유 */
+private const val MAP_DEFER_MAX_MS = 7_000L
 
 /**
  * 홈 지도. 저장 P 핀(확정 기록)과 현재 위치(실시간 상태)를 분리해 그린다.
@@ -82,16 +87,16 @@ fun ParkingMap(
     /** 저장 전 하차 후보에 붙은 위치(하차 지점). 있으면 그곳으로 한 번 맞춘다 */
     pendingLat: Double? = null,
     pendingLng: Double? = null,
-    /** true로 처음 그려지면 지도(MapView) 생성을 잠깐 미뤄 위에 뜨는 패널을 먼저 보여 준다 */
+    /** true로 처음 그려지면 false가 될 때까지(최대 [MAP_DEFER_MAX_MS]) 지도(MapView) 생성을 미뤄 위의 패널을 먼저 보여 준다 */
     deferHost: Boolean = false,
 ) {
-    // 처음 한 번만 판단한다. 이미 만든 지도는 다시 미루지 않는다
+    // 처음 그릴 때만 판단한다. 이미 만든 지도는 다시 미루지 않는다
     var hostAllowed by remember { mutableStateOf(!deferHost) }
+    val deferNow by rememberUpdatedState(deferHost)
     LaunchedEffect(Unit) {
-        if (!hostAllowed) {
-            delay(MAP_DEFER_MS)
-            hostAllowed = true
-        }
+        if (hostAllowed) return@LaunchedEffect
+        withTimeoutOrNull(MAP_DEFER_MAX_MS) { snapshotFlow { deferNow }.first { !it } }
+        hostAllowed = true
     }
     val shape = RoundedCornerShape(22.dp)
     var connection by remember {

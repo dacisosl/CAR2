@@ -10,6 +10,8 @@ import androidx.core.app.NotificationCompat
 import app.car.parking.MainActivity
 import app.car.parking.R
 import app.car.parking.platform.statusbar.StatusBarNotifier
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * 앱 자동 표시. 기본 경로는 Activity를 직접 띄우는 것이다.
@@ -20,6 +22,8 @@ object AutoLauncher {
     const val EXTRA_CANDIDATE_ID = "candidateId"
     const val EXTRA_OPEN_PANEL = "openPanel"
     const val EXTRA_AUTO_ENTRY = "autoEntry"
+    /** 보조 알림을 눌러 연 경우. 사용자가 직접 연 것이므로 자동 진입 취소 때 뒤로 보내지 않는다 */
+    const val EXTRA_VIA_NOTIFICATION = "viaNotification"
 
     private const val FALLBACK_CHANNEL = "parking_candidate_v1"
     private const val FALLBACK_ID = 3
@@ -37,17 +41,34 @@ object AutoLauncher {
             .putExtra(EXTRA_OPEN_PANEL, true)
             .putExtra(EXTRA_CANDIDATE_ID, candidateId)
 
+    /** 화면이 실제로 연 후보(같은 프로세스). [markShown]이 기록하고 [awaitShown]이 기다린다 */
+    @Volatile
+    private var shownCandidateId: String? = null
+
     /**
-     * 기본은 화면 직접 표시. 시스템이 백그라운드 실행을 막아도 startActivity는 예외 없이 무시될 수 있어
-     * 보조 알림을 함께 올리고, 화면이 실제로 열리면(openCandidate) 바로 지운다.
+     * 기본은 화면 직접 표시. 시스템이 백그라운드 실행을 조용히 막을 수 있으므로, 호출한 쪽은
+     * [awaitShown]으로 화면이 실제로 열렸는지 확인하고 열리지 않았을 때만 [postFallback]으로 보조 알림을 올린다.
+     * 정상 경로에서는 알림 헤드업·소리가 나지 않는다.
      * @return Activity 실행을 요청했으면 true
      */
-    fun launchCandidate(context: Context, candidateId: String): Boolean {
-        // 보조 알림을 먼저 올린다. 화면이 열리면(openCandidate) 지우는데, 실행 요청을 먼저 보내면
-        // 이미 떠 있는 화면이 알림보다 먼저 지우기를 시도해 열린 패널 위에 알림이 남을 수 있다
-        postFallback(context, candidateId)
-        return canDrawOverlays(context) &&
+    fun launchCandidate(context: Context, candidateId: String): Boolean =
+        canDrawOverlays(context) &&
             runCatching { context.startActivity(intent(context, candidateId, animate = false)) }.isSuccess
+
+    /** 화면(openCandidate)이 이 후보의 패널을 열었다. 이미 올라간 보조 알림도 지운다 */
+    fun markShown(context: Context, candidateId: String) {
+        shownCandidateId = candidateId
+        cancelFallback(context)
+    }
+
+    /** 화면이 이 후보를 열 때까지 최대 [timeoutMs] 기다린다. 열렸으면 true */
+    suspend fun awaitShown(candidateId: String, timeoutMs: Long): Boolean {
+        if (shownCandidateId == candidateId) return true
+        if (timeoutMs <= 0L) return false
+        return withTimeoutOrNull(timeoutMs) {
+            while (shownCandidateId != candidateId) delay(SHOWN_POLL_MS)
+            true
+        } ?: false
     }
 
     fun cancelFallback(context: Context) {
@@ -64,14 +85,14 @@ object AutoLauncher {
         )
     }
 
-    /** 자동 표시 조건이 없을 때만 쓰는 보조 경로 */
-    private fun postFallback(context: Context, candidateId: String) {
+    /** 자동 표시가 되지 않았을 때만 쓰는 보조 경로 */
+    fun postFallback(context: Context, candidateId: String) {
         if (!StatusBarNotifier.canPost(context)) return
         val nm = context.getSystemService(NotificationManager::class.java)
         val pending = PendingIntent.getActivity(
             context,
             FALLBACK_ID,
-            intent(context, candidateId),
+            intent(context, candidateId).putExtra(EXTRA_VIA_NOTIFICATION, true),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val notification = NotificationCompat.Builder(context, FALLBACK_CHANNEL)
@@ -83,5 +104,9 @@ object AutoLauncher {
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .build()
         runCatching { nm.notify(FALLBACK_ID, notification) }
+        // 알림을 올리는 사이 화면이 열렸으면 바로 지운다(화면 쪽 지우기가 알림보다 먼저 끝났을 수 있다)
+        if (shownCandidateId == candidateId) cancelFallback(context)
     }
+
+    private const val SHOWN_POLL_MS = 50L
 }

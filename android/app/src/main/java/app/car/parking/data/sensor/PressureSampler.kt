@@ -6,7 +6,7 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Handler
-import android.os.Looper
+import android.os.HandlerThread
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
@@ -30,7 +30,8 @@ class PressureSampler(context: Context) {
         val values = mutableListOf<Float>()
         return withTimeoutOrNull(timeoutMs) {
             suspendCancellableCoroutine { cont ->
-                val handler = Handler(Looper.getMainLooper())
+                // 하차 순간에는 메인 스레드가 패널을 그리느라 바쁘다. 센서 이벤트와 마감은 전용 스레드에서 받는다
+                val handler = Handler(sensorThread.looper)
                 val listener = object : SensorEventListener {
                     override fun onSensorChanged(event: SensorEvent) {
                         values += event.values[0]
@@ -57,5 +58,10 @@ class PressureSampler(context: Context) {
                 }
             }
         }
+    }
+
+    private companion object {
+        /** 기압 측정 전용 스레드(앱 전체에서 하나). 측정이 없을 때는 대기만 한다 */
+        val sensorThread: HandlerThread by lazy { HandlerThread("pressure-sampler").apply { start() } }
     }
 }

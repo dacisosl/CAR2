@@ -142,6 +142,33 @@ class ParkingRepository(
         true
     }
 
+    /**
+     * 하차 시점 기압을 후보에 붙인다. 패널은 바로 뜨고 기압은 그 뒤에 도착하므로,
+     * 그 사이 이미 저장했으면(후보 CONFIRMED) 저장한 층으로 층 기준점을 만든다(저장 때는 기압이 없어 못 만들었다).
+     */
+    suspend fun attachPressure(candidateId: String, reading: PressureReading): PressureAttach = candidateLock.withLock {
+        val current = dao.candidate(candidateId) ?: return@withLock PressureAttach.SKIPPED
+        if (current.pressureHpa != null) return@withLock PressureAttach.SKIPPED
+        dao.setCandidatePressure(candidateId, reading.hpa, reading.measuredAtMs)
+        if (current.status != CandidateStatus.CONFIRMED) return@withLock PressureAttach.ATTACHED
+        val record = dao.recordFor(current.vehicleId, current.detectedAt, DetectionSource.BLUETOOTH)
+            ?: return@withLock PressureAttach.ATTACHED
+        val floor = record.floorLevel ?: return@withLock PressureAttach.ATTACHED
+        dao.insertReference(
+            FloorReferenceEntity(
+                floorLevel = floor,
+                pressureHpa = reading.hpa,
+                measuredAt = reading.measuredAtMs,
+                latitude = current.latitude ?: record.latitude,
+                longitude = current.longitude ?: record.longitude,
+                floorHeightM = FloorEstimator.DEFAULT_FLOOR_HEIGHT_M,
+            )
+        )
+        PressureAttach.REFERENCE_CREATED
+    }
+
+    enum class PressureAttach { SKIPPED, ATTACHED, REFERENCE_CREATED }
+
     suspend fun recommendationFor(candidate: CandidateEntity, hasBarometer: Boolean): FloorRecommendation {
         val sample = candidate.pressureHpa?.let {
             PressureSample(it, candidate.pressureAt ?: candidate.detectedAt, candidate.latitude, candidate.longitude)

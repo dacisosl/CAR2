@@ -149,6 +149,10 @@ interface ParkingDao {
         source: String,
     ): Int
 
+    /** 하차 후보로 만든 기록(같은 차량·감지 시각). 늦게 도착한 기압으로 기준점을 만들 때 저장한 층을 찾는다 */
+    @Query("SELECT * FROM parking_record WHERE vehicleId = :vehicleId AND detectedAt = :detectedAt AND detectionSource = :detection LIMIT 1")
+    suspend fun recordFor(vehicleId: String, detectedAt: Long, detection: String): ParkingRecordEntity?
+
     @Query("UPDATE floor_reference SET latitude = :lat, longitude = :lng WHERE measuredAt = :measuredAt AND latitude IS NULL")
     suspend fun fillReferenceLocation(measuredAt: Long, lat: Double, lng: Double): Int
 

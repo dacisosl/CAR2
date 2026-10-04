@@ -131,8 +131,11 @@ fun CarRoot(viewModel: AppViewModel, onUnlockThen: (() -> Unit) -> Unit) {
                 val record = (recordState as? RecordState.Loaded)?.record
                 val location = rememberCurrentLocation(checks.anyLocation)
                 Box(Modifier.fillMaxSize()) {
-                    // 자동 진입으로 홈이 처음 그려질 때는 패널을 먼저 보여 주고 지도는 잠깐 뒤에 만든다
-                    val deferMap = remember { viewModel.entryPending.value || (drawer.open && drawer.autoEntry) }
+                    // 자동 진입으로 홈이 처음 그려질 때는 패널(주차 영상)을 먼저 보여 주고,
+                    // 지도는 패널이 닫히거나 영상이 끝난 뒤 만든다(지도 생성이 영상 도중 화면을 멈추지 않게)
+                    val deferStart = remember { viewModel.entryPending.value || (drawer.open && drawer.autoEntry) }
+                    val entryPending by viewModel.entryPending.collectAsState()
+                    val deferMap = deferStart && (entryPending || drawer.open)
                     HomeScreen(
                         deferMap = deferMap,
                         record = record,
