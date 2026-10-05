@@ -48,6 +48,12 @@ import app.car.parking.ui.theme.LocalCarTokens
 import app.car.parking.ui.theme.MapColors
 import app.car.parking.ui.theme.cardSurface
 import app.car.parking.ui.theme.primarySurface
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Stroke
 
 @Composable
 fun SectionTitle(text: String, modifier: Modifier = Modifier) {
@@ -57,6 +63,71 @@ fun SectionTitle(text: String, modifier: Modifier = Modifier) {
         color = LocalCarTokens.current.black,
         modifier = modifier.padding(top = 24.dp, bottom = 12.dp).semantics { heading() },
     )
+}
+
+/**
+ * 사이드바 위치. 왼쪽(기본)은 넓은 패널에 층수 릴과 주차 영상, 오른쪽은 좁은 패널에 층수 릴만.
+ * 사이드바는 끌어서 옮기지 않고 여기서만 바꾼다
+ */
+@Composable
+fun SideChooser(current: DrawerSide, onSelect: (DrawerSide) -> Unit) {
+    val t = LocalCarTokens.current
+    Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        listOf(
+            Triple(DrawerSide.Left, "왼쪽", "층수 릴 + 주차 영상"),
+            Triple(DrawerSide.Right, "오른쪽", "층수 릴만"),
+        ).forEach { (side, label, detail) ->
+            val selected = current == side
+            Column(
+                Modifier
+                    .weight(1f)
+                    .clip(t.cardShape)
+                    .border(if (selected) 2.dp else 1.dp, if (selected) t.primary else t.border, t.cardShape)
+                    .selectable(selected = selected, role = Role.RadioButton) { onSelect(side) }
+                    .semantics(mergeDescendants = true) { contentDescription = "사이드바 $label, $detail" }
+                    .padding(vertical = 14.dp, horizontal = 12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                SidePreview(side, Modifier.size(width = 56.dp, height = 92.dp))
+                Spacer(Modifier.height(10.dp))
+                Text(label, style = CarType.body.copy(fontWeight = FontWeight.Bold), color = t.black)
+                Text(detail, style = CarType.label, color = t.textSecondary, textAlign = TextAlign.Center)
+            }
+        }
+    }
+}
+
+/** 휴대폰 화면 위 사이드바 모양 선 그림. 왼쪽은 넓은 패널(릴 띠 + 영상 자리), 오른쪽은 좁은 패널(릴 띠) */
+@Composable
+private fun SidePreview(side: DrawerSide, modifier: Modifier) {
+    val t = LocalCarTokens.current
+    Canvas(modifier) {
+        val line = 2.dp.toPx()
+        drawRoundRect(t.black, style = Stroke(line), cornerRadius = CornerRadius(9.dp.toPx()))
+        val pad = 5.dp.toPx()
+        val innerW = size.width - pad * 2
+        val innerH = size.height - pad * 2
+        val wide = side == DrawerSide.Left
+        val panelW = innerW * if (wide) 0.9f else 0.5f
+        val panelL = if (wide) pad else size.width - pad - panelW
+        val panelT = pad + innerH * 0.18f
+        val panelH = innerH * 0.64f
+        drawRoundRect(t.primary.copy(alpha = 0.16f), Offset(panelL, panelT), Size(panelW, panelH), CornerRadius(3.dp.toPx()))
+        val bandW = if (wide) panelW * 0.34f else panelW * 0.76f
+        val bandL = if (wide) panelL + panelW * 0.06f else panelL + (panelW - bandW) / 2
+        drawRoundRect(t.primary, Offset(bandL, panelT + panelH * 0.42f), Size(bandW, panelH * 0.16f), CornerRadius(2.dp.toPx()))
+        if (wide) {
+            val sceneL = bandL + bandW + panelW * 0.07f
+            val sceneW = panelL + panelW * 0.94f - sceneL
+            drawRoundRect(
+                t.black.copy(alpha = 0.55f),
+                Offset(sceneL, panelT + panelH * 0.32f),
+                Size(sceneW, panelH * 0.36f),
+                CornerRadius(2.dp.toPx()),
+                style = Stroke(1.5.dp.toPx()),
+            )
+        }
+    }
 }
 
 /** 미리보기 카드 5개(2열, 마지막 줄은 한 칸). 카드 전체를 눌러 선택하고 즉시 적용한다 */

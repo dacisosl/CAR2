@@ -160,9 +160,8 @@ fun CarRoot(viewModel: AppViewModel, onUnlockThen: (() -> Unit) -> Unit) {
                         BackHandler { viewModel.dismissDrawer() }
                         FloorDrawer(
                             state = drawer,
+                            // 사이드바 위치는 설정(디자인 설정 → 사이드바 위치)에서만 바꾼다
                             side = settings.drawerSide,
-                            // 사이드바 위치는 패널 손잡이를 길게 눌러 끌어서만 바꾼다
-                            onSideChange = { viewModel.setDrawerSide(it) },
                             onSelect = viewModel::selectLevel,
                             onCenter = viewModel::setCenterLevel,
                             onClose = viewModel::closeDrawer,

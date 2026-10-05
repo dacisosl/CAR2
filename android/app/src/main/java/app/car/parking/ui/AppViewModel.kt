@@ -71,6 +71,7 @@ data class DrawerUiState(
 /** 설정 화면에서 고친 뒤 저장 버튼으로 확정하는 값 */
 data class SettingsDraft(
     val theme: AppThemeId,
+    val drawerSide: DrawerSide,
     val vehicleAddress: String?,
     val vehicleName: String?,
     val homeLatitude: Double?,
@@ -79,6 +80,7 @@ data class SettingsDraft(
     companion object {
         fun from(s: AppSettings) = SettingsDraft(
             theme = s.appTheme,
+            drawerSide = s.drawerSide,
             vehicleAddress = s.registeredVehicleAddress,
             vehicleName = s.registeredVehicleName,
             homeLatitude = s.homeLatitude,
@@ -613,6 +615,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun saveSettings(draft: SettingsDraft) = viewModelScope.launch {
         val current = settings.value
         if (current?.appTheme != draft.theme) container.settings.setTheme(draft.theme)
+        if (current?.drawerSide != draft.drawerSide) container.settings.setDrawerSide(draft.drawerSide)
         if (draft.vehicleAddress != null && draft.vehicleAddress != current?.registeredVehicleAddress) {
             container.settings.setVehicle(draft.vehicleAddress, draft.vehicleName)
         }
@@ -624,8 +627,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             container.settings.clearHome()
         }
     }
-
-    fun setDrawerSide(side: DrawerSide) = viewModelScope.launch { container.settings.setDrawerSide(side) }
 
     /** 알림 권한을 새로 받은 뒤 상태바 표시를 다시 게시한다 */
     fun resyncStatusBar() = viewModelScope.launch {

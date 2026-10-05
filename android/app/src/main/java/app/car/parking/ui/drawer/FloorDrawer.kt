@@ -1,13 +1,11 @@
 package app.car.parking.ui.drawer
 
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.rememberSplineBasedDecay
 import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.snapping.SnapPosition
 import androidx.compose.foundation.gestures.snapping.SnapLayoutInfoProvider
@@ -23,29 +21,24 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -70,18 +63,13 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.platform.LocalViewConfiguration
-import androidx.compose.ui.platform.ViewConfiguration
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.customActions
-import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import app.car.parking.R
 import app.car.parking.data.storage.DrawerSide
@@ -95,15 +83,16 @@ import app.car.parking.ui.theme.LocalCarTokens
 import app.car.parking.ui.theme.primarySurface
 import kotlinx.coroutines.launch
 import kotlin.math.abs
-import kotlin.math.roundToInt
 
-private const val HANDLE_HOLD_MS = 350L
-
+/**
+ * 층수 패널. 위치는 설정(디자인 설정 → 사이드바 위치)에서만 바꾼다(끌어서 옮기지 않는다).
+ * 왼쪽(기본): 화면 폭의 90%까지 넓혀 왼쪽 층수 릴 + 오른쪽 주차 장면(영상·층수 새기기).
+ * 오른쪽: 좁은 패널에 층수 릴만(영상 없음).
+ */
 @Composable
 fun FloorDrawer(
     state: DrawerUiState,
     side: DrawerSide,
-    onSideChange: (DrawerSide) -> Unit,
     onSelect: (Int) -> Unit,
     onCenter: (Int) -> Unit,
     onClose: () -> Unit,
@@ -114,22 +103,22 @@ fun FloorDrawer(
     onRequestNotifications: () -> Unit,
 ) {
     val t = LocalCarTokens.current
-    val haptic = LocalHapticFeedback.current
     val density = LocalDensity.current
-    val scope = rememberCoroutineScope()
+    val withScene = side == DrawerSide.Left
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val screenWidth = maxWidth
         val screenHeight = maxHeight
         val fontScale = density.fontScale.coerceIn(1f, 1.3f)
-        // 왼쪽 릴 + 오른쪽 주차 장면. 화면 폭의 90%(최대 400dp), 바깥을 눌러 닫을 자리는 남긴다
-        val panelWidth = minOf(400.dp * fontScale, screenWidth * 0.9f)
+        val panelWidth = if (withScene) {
+            // 화면 폭의 90%(최대 400dp). 바깥을 눌러 닫을 자리는 남긴다
+            minOf(400.dp * fontScale, screenWidth * 0.9f)
+        } else {
+            // 약 200~216dp, 화면 폭의 60% 이내. 큰 글자에서는 필요한 폭을 더 확보한다
+            minOf(216.dp * fontScale, screenWidth * 0.6f).coerceAtLeast(184.dp)
+        }
         // 40sp 층 글자(가장 긴 ‘10F’·‘B10’) + 띠 여백. 남는 폭은 주차 장면에 준다
         val reelWidth = 100.dp * fontScale
-        val panelWidthPx = with(density) { panelWidth.toPx() }
-        val screenPx = with(density) { screenWidth.toPx() }
-        val dragX = remember(side) { Animatable(0f) }
-        var dragging by remember { mutableStateOf(false) }
 
         // 배경 홈만 옅게 어둡게. 누르면 릴에서 마지막으로 멈춘 층으로 저장하고 닫는다
         Box(
@@ -153,91 +142,20 @@ fun FloorDrawer(
                 RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp)
             }
 
-            if (dragging) {
-                // 드래그 중 반대쪽 고정 위치 표시
-                Box(
-                    Modifier
-                        .align(if (side == DrawerSide.Left) Alignment.CenterEnd else Alignment.CenterStart)
-                        .width(panelWidth)
-                        .height(panelHeight)
-                        .padding(6.dp)
-                        .border(2.dp, if (t.dark) t.primary else t.white.copy(alpha = 0.9f), RoundedCornerShape(12.dp)),
-                )
-            }
-
             Column(
                 Modifier
                     .align(if (side == DrawerSide.Left) Alignment.CenterStart else Alignment.CenterEnd)
-                    .offset { IntOffset(dragX.value.roundToInt(), 0) }
                     .width(panelWidth)
                     .height(panelHeight)
-                    .shadow(if (dragging) 16.dp else 8.dp, panelShape)
+                    .shadow(8.dp, panelShape)
                     .clip(panelShape)
                     .background(t.white)
                     .let { m -> (t.accentSilver ?: t.cardBorder)?.let { m.border(1.dp, it, panelShape) } ?: m }
                     // 패널 면의 탭이 뒤 배경(저장 후 닫기)으로 넘어가지 않게만 막는다. 접근성 버튼으로 노출하지 않는다
                     .pointerInput(Unit) { detectTapGestures { } }
-                    .padding(horizontal = 16.dp),
+                    .padding(horizontal = 16.dp)
+                    .padding(top = 20.dp),
             ) {
-                val base = LocalViewConfiguration.current
-                val holdConfig = remember(base) {
-                    object : ViewConfiguration by base {
-                        override val longPressTimeoutMillis: Long = HANDLE_HOLD_MS
-                    }
-                }
-                CompositionLocalProvider(LocalViewConfiguration provides holdConfig) {
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                            .semantics {
-                                contentDescription = "패널 이동 손잡이, 길게 눌러 좌우로 이동"
-                                customActions = listOf(
-                                    CustomAccessibilityAction(if (side == DrawerSide.Left) "오른쪽으로 이동" else "왼쪽으로 이동") {
-                                        onSideChange(side.opposite()); true
-                                    },
-                                )
-                            }
-                            .pointerInput(side, panelWidthPx, screenPx) {
-                                detectDragGesturesAfterLongPress(
-                                    onDragStart = {
-                                        dragging = true
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    },
-                                    onDrag = { change, amount ->
-                                        change.consume()
-                                        scope.launch { dragX.snapTo(dragX.value + amount.x) }
-                                    },
-                                    onDragEnd = {
-                                        dragging = false
-                                        val center = if (side == DrawerSide.Left) panelWidthPx / 2 + dragX.value
-                                        else screenPx - panelWidthPx / 2 + dragX.value
-                                        val switch = if (side == DrawerSide.Left) center > screenPx * 0.6f else center < screenPx * 0.4f
-                                        if (switch) {
-                                            haptic.performHapticFeedback(HapticFeedbackType.Confirm)
-                                            onSideChange(side.opposite())
-                                        } else {
-                                            // 유효 영역 밖에서 놓으면 원래 쪽으로 복귀
-                                            scope.launch { dragX.animateTo(0f) }
-                                        }
-                                    },
-                                    onDragCancel = {
-                                        dragging = false
-                                        scope.launch { dragX.animateTo(0f) }
-                                    },
-                                )
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Box(
-                            Modifier
-                                .size(width = 40.dp, height = 4.dp)
-                                .clip(CircleShape)
-                                .background(t.accentSilver ?: t.accent),
-                        )
-                    }
-                }
-
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         "주차 층수",
@@ -254,7 +172,7 @@ fun FloorDrawer(
                     modifier = Modifier.padding(bottom = 8.dp),
                 )
 
-                // 왼쪽 층수 릴, 오른쪽 주차 장면. 장면은 릴 가운데 띠와 같은 높이에 둔다.
+                // 왼쪽 층수 릴, 오른쪽 주차 장면(왼쪽 위치일 때만). 장면은 릴 가운데 띠와 같은 높이에 둔다.
                 // 열린 패널이 다른 기록(새 하차 후보 등)으로 바뀌면 릴과 장면을 처음부터 다시 만든다
                 key(state.target) {
                     Row(
@@ -267,26 +185,32 @@ fun FloorDrawer(
                             onSelect = onSelect,
                             onCenter = onCenter,
                             enabled = !state.saving,
-                            modifier = Modifier.width(reelWidth).fillMaxHeight(),
+                            modifier = if (withScene) {
+                                Modifier.width(reelWidth).fillMaxHeight()
+                            } else {
+                                Modifier.weight(1f).fillMaxHeight()
+                            },
                         )
-                        ParkingScene(
-                            level = state.selectedLevel,
-                            fromUser = state.userTouched,
-                            modifier = Modifier.weight(1f).fillMaxHeight(),
-                        )
-                }
+                        if (withScene) {
+                            ParkingScene(
+                                level = state.selectedLevel,
+                                fromUser = state.userTouched,
+                                modifier = Modifier.weight(1f).fillMaxHeight(),
+                            )
+                        }
+                    }
                 }
 
                 // 상태바 스위치 + 저장 버튼, 한 행 두 열. 둘 다 패널 안.
-                // 위 칸과 열을 맞춘다: 상태바는 릴 폭(내용에 맞는 길이), 저장은 장면 폭
+                // 넓은 패널은 위 칸과 열을 맞춘다(상태바는 릴 폭, 저장은 장면 폭). 좁은 패널은 상태바 + 작은 저장
                 Row(
                     Modifier.fillMaxWidth().padding(top = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(if (withScene) 12.dp else 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(
                         Modifier
-                            .width(reelWidth)
+                            .then(if (withScene) Modifier.width(reelWidth) else Modifier.weight(1f))
                             .height(56.dp)
                             .clip(t.buttonShape)
                             .border(1.dp, t.accentSilver ?: t.border, t.buttonShape)
@@ -318,7 +242,7 @@ fun FloorDrawer(
                     val canSave = (state.selectedLevel ?: state.centerLevel) != null && !state.saving
                     Box(
                         Modifier
-                            .weight(1f)
+                            .then(if (withScene) Modifier.weight(1f) else Modifier.width(92.dp))
                             .height(56.dp)
                             .clip(t.buttonShape)
                             .primarySurface(t, t.buttonShape, enabled = canSave)
@@ -523,7 +447,8 @@ private fun BoxScope.ReelLabel(label: String, color: Color, distance: () -> Floa
                 val scale = 1f - 0.16f * d.coerceAtMost(2.5f)
                 scaleX = scale
                 scaleY = scale
-                alpha = if (insideBand) 1f else (1f - 0.3f * d).coerceAtLeast(0.18f)
+                // 띠 밖 층은 조금 흐리게: 바로 옆 층 50%, 두 칸 30%, 그 너머 20%(선택한 층이 먼저 눈에 들어오게)
+                alpha = if (insideBand) 1f else (0.7f - 0.2f * d).coerceIn(0.2f, 0.7f)
             },
         )
     }

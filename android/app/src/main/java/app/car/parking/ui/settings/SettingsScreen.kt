@@ -299,6 +299,13 @@ fun SettingsScreen(
                         Spacer(Modifier.height(8.dp))
                         ThemeChooser(draft.theme) { draft = draft.copy(theme = it) }
                         Text(
+                            "사이드바 위치",
+                            style = CarType.body.copy(fontWeight = FontWeight.Bold),
+                            color = t.black,
+                            modifier = Modifier.padding(top = 28.dp, bottom = 10.dp).semantics { heading() },
+                        )
+                        SideChooser(draft.drawerSide) { draft = draft.copy(drawerSide = it) }
+                        Text(
                             "저장을 누르면 앱 전체에 적용돼요",
                             style = CarType.secondary,
                             color = t.textSecondary,
@@ -344,7 +351,7 @@ fun ReadinessChecklist(settings: AppSettings, checks: SystemChecks, actions: Sys
 }
 
 private val DraftSaver = androidx.compose.runtime.saveable.listSaver<SettingsDraft, Any?>(
-    save = { listOf(it.theme.key, it.vehicleAddress, it.vehicleName, it.homeLatitude, it.homeLongitude) },
+    save = { listOf(it.theme.key, it.vehicleAddress, it.vehicleName, it.homeLatitude, it.homeLongitude, it.drawerSide.key) },
     restore = {
         SettingsDraft(
             theme = app.car.parking.data.storage.AppThemeId.from(it[0] as String?),
@@ -352,6 +359,7 @@ private val DraftSaver = androidx.compose.runtime.saveable.listSaver<SettingsDra
             vehicleName = it[2] as String?,
             homeLatitude = it[3] as Double?,
             homeLongitude = it[4] as Double?,
+            drawerSide = app.car.parking.data.storage.DrawerSide.from(it.getOrNull(5) as String?),
         )
     },
 )
